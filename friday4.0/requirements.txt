@@ -1,62 +1,36 @@
 # ═══════════════════════════════════════════════════════════════════════════
-# AGRI-FRIDAY AI ASSISTANT - REQUIREMENTS
+# AGRI-FRIDAY - CLOUD-SAFE REQUIREMENTS
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Core Web Framework
 streamlit>=1.31.0
+audio-recorder-streamlit   # NEW: Required for cloud microphone access
 
 # Computer Vision & Image Processing
-opencv-python>=4.9.0
-opencv-python-headless>=4.9.0  # For headless environments
+opencv-python-headless>=4.9.0  # ONLY use headless for cloud deployments
 mediapipe>=0.10.9
 pillow>=10.2.0
 numpy>=1.26.0
 
 # AI & LLM
-groq>=0.4.2                    # Groq LLM API
-openai>=1.12.0                 # Optional: OpenAI API
-anthropic>=0.18.0              # Optional: Anthropic Claude API
+groq>=0.4.2                
+openai>=1.12.0             
+anthropic>=0.18.0          
 
 # RAG & Document Processing
 langchain>=0.1.10
 langchain-community>=0.0.25
 langchain-groq>=0.0.1
-pypdf>=4.0.0                   # PDF processing
-chromadb>=0.4.22               # Vector database
-sentence-transformers>=2.3.1   # Embeddings
-faiss-cpu>=1.7.4               # Alternative vector store
-
-# Speech & Audio
-SpeechRecognition>=3.10.1
-edge-tts>=6.1.9
-pygame>=2.5.2
-pydub>=0.25.1                  # Audio manipulation
-pyaudio>=0.2.14                # Microphone input
-
-# Wake Word Detection (Optional)
-pvporcupine>=3.0.0             # Picovoice wake word
-pvrecorder>=1.2.2
+pypdf>=4.0.0               
+chromadb>=0.4.22           
+sentence-transformers>=2.3.1   
+faiss-cpu>=1.7.4           
 
 # Web Scraping & Search
 requests>=2.31.0
 beautifulsoup4>=4.12.3
 duckduckgo-search>=4.4.0
 
-# System Control
-pyautogui>=0.9.54              # System automation
-psutil>=5.9.8                  # System monitoring
-screen-brightness-control>=0.22.3  # Brightness control
-
-# Windows-specific (optional)
-pycaw>=20240210; platform_system=='Windows'  # Volume control
-comtypes>=1.4.0; platform_system=='Windows'
-
 # Utilities
-python-dotenv>=1.0.1           # Environment variables
-supabase>=2.3.4                # Optional: Cloud database
-pywhatkit>=5.4                 # YouTube/WhatsApp automation
-
-# Development & Testing
-pytest>=8.0.0
-black>=24.0.0
-flake8>=7.0.0
+python-dotenv>=1.0.1       
+supabase>=2.3.4
