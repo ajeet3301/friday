@@ -1,19 +1,27 @@
-streamlit
-groq
-langchain
-langchain-community
-langchain-groq
-sentence-transformers
-chromadb
-pypdf
-opencv-python
-numpy
-pillow
-SpeechRecognition
-edge-tts
-pygame
-pyaudio
-python-dotenv
-opencv-python-headless
-streamlit-webrtc
-av
+# Friday AI Dashboard — Requirements
+# Install: pip install -r requirements.txt
+
+# ── Core dashboard ──────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Vision ──────────────────────────────────────────────────
+opencv-python>=4.9.0
+numpy>=1.26.0
+
+# ── AI / LLM ────────────────────────────────────────────────
+groq>=0.9.0
+anthropic>=0.28.0           # optional fallback
+
+# ── RAG stack ───────────────────────────────────────────────
+langchain>=0.2.0
+langchain-community>=0.2.0
+langchain-huggingface>=0.0.3
+pypdf>=4.2.0                # PDF loader
+faiss-cpu>=1.8.0            # vector store
+sentence-transformers>=3.0.0
+
+# ── System monitoring ────────────────────────────────────────
+psutil>=5.9.0
+
+# ── Utilities ───────────────────────────────────────────────
+python-dotenv>=1.0.0
