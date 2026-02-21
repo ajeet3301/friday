@@ -15,3 +15,5 @@ pygame
 pyaudio
 python-dotenv
 opencv-python-headless
+streamlit-webrtc
+av
