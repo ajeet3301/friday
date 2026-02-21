@@ -2,6 +2,7 @@
 AGRI-FRIDAY - USER APP
 Reads configuration from admin panel
 Run admin panel: streamlit run admin.py
+Setup: pip install -r requirements.txt && echo "GROQ_API_KEY=your_key" > .env
 Run user app: streamlit run app_with_admin.py
 """
 
