@@ -1,253 +1,639 @@
 """
-AGRI-FRIDAY - HACKATHON EDITION
-Features: Glass UI | PDF RAG | Voice | Camera
-Setup: pip install -r requirements.txt && echo "GROQ_API_KEY=your_key" > .env
+Friday AI Assistant — Hackathon Dashboard
 Run: streamlit run app.py
 """
 
 import streamlit as st
 import cv2
+import numpy as np
+import time
 import os
-from datetime import datetime
-from groq import Groq
-from langchain_groq import ChatGroq
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.chains import RetrievalQA
-from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+import threading
 import tempfile
-import speech_recognition as sr
-import edge_tts
-import pygame
-import asyncio
+from datetime import datetime
 
-# CONFIG
-GROQ_KEY = os.getenv("GROQ_API_KEY", "")
+# ── Page config ──────────────────────────────────────────────────────────
+st.set_page_config(
+    page_title="Friday AI",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-def init_ai():
-    if not GROQ_KEY: return None, None
-    client = Groq(api_key=GROQ_KEY)
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+# ── Inject custom CSS ─────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+
+/* ── Base ── */
+html, body, [class*="css"] {
+    background-color: #050a0f;
+    color: #c8d8e8;
+    font-family: 'IBM Plex Mono', monospace;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #050a0f; }
+::-webkit-scrollbar-thumb { background: #00d4ff44; border-radius: 2px; }
+
+/* ── Sidebar ── */
+[data-testid="stSidebar"] {
+    background: #080e15;
+    border-right: 1px solid #00d4ff18;
+}
+
+/* ── Header ── */
+.friday-header {
+    font-family: 'Orbitron', monospace;
+    font-size: 2.4rem;
+    font-weight: 900;
+    letter-spacing: 0.18em;
+    color: #00d4ff;
+    text-shadow: 0 0 30px #00d4ff88, 0 0 60px #00d4ff33;
+    margin: 0;
+    line-height: 1;
+}
+.friday-sub {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.3em;
+    color: #00d4ff55;
+    margin-top: 4px;
+}
+
+/* ── Status badges ── */
+.status-row {
+    display: flex;
+    gap: 12px;
+    margin: 12px 0 18px 0;
+    flex-wrap: wrap;
+}
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 2px;
+    font-size: 0.68rem;
+    letter-spacing: 0.15em;
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    border: 1px solid;
+}
+.badge-on  { color: #00ffaa; border-color: #00ffaa33; background: #00ffaa0a; }
+.badge-off { color: #ff4466; border-color: #ff446633; background: #ff44660a; }
+.badge-warn{ color: #ffaa00; border-color: #ffaa0033; background: #ffaa000a; }
+.dot { width: 6px; height: 6px; border-radius: 50%; }
+.dot-on   { background: #00ffaa; box-shadow: 0 0 6px #00ffaa; }
+.dot-off  { background: #ff4466; box-shadow: 0 0 6px #ff4466; }
+.dot-warn { background: #ffaa00; box-shadow: 0 0 6px #ffaa00; }
+
+/* ── Panel cards ── */
+.panel {
+    background: #080e15;
+    border: 1px solid #00d4ff18;
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 12px;
+    position: relative;
+}
+.panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #00d4ff44, transparent);
+}
+.panel-label {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.3em;
+    color: #00d4ff66;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+}
+
+/* ── Camera feed ── */
+.cam-wrapper {
+    background: #000;
+    border: 1px solid #00d4ff22;
+    border-radius: 2px;
+    overflow: hidden;
+    aspect-ratio: 16/9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.cam-offline {
+    color: #00d4ff22;
+    font-family: 'Orbitron', monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.2em;
+    text-align: center;
+}
+
+/* ── Detected object pill ── */
+.detect-pill {
+    display: inline-block;
+    padding: 6px 16px;
+    background: #00d4ff11;
+    border: 1px solid #00d4ff33;
+    border-radius: 2px;
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    color: #00d4ff;
+    margin-top: 8px;
+}
+
+/* ── Chat ── */
+.chat-box {
+    height: 360px;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    background: #050a0f;
+    border: 1px solid #00d4ff12;
+    border-radius: 2px;
+}
+.msg-user {
+    align-self: flex-end;
+    background: #00d4ff14;
+    border: 1px solid #00d4ff33;
+    border-radius: 2px 2px 0 2px;
+    padding: 8px 14px;
+    max-width: 75%;
+    font-size: 0.8rem;
+    color: #c8d8e8;
+}
+.msg-ai {
+    align-self: flex-start;
+    background: #0a1520;
+    border: 1px solid #00ffaa22;
+    border-radius: 2px 2px 2px 0;
+    padding: 8px 14px;
+    max-width: 75%;
+    font-size: 0.8rem;
+    color: #00ffaa;
+}
+.msg-label {
+    font-size: 0.58rem;
+    letter-spacing: 0.2em;
+    opacity: 0.45;
+    margin-bottom: 3px;
+}
+
+/* ── Inputs ── */
+.stTextInput input, .stTextArea textarea {
+    background: #080e15 !important;
+    border: 1px solid #00d4ff22 !important;
+    border-radius: 2px !important;
+    color: #c8d8e8 !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 0.8rem !important;
+}
+.stTextInput input:focus, .stTextArea textarea:focus {
+    border-color: #00d4ff55 !important;
+    box-shadow: 0 0 0 1px #00d4ff22 !important;
+}
+
+/* ── Buttons ── */
+.stButton button {
+    background: transparent !important;
+    border: 1px solid #00d4ff44 !important;
+    color: #00d4ff !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 0.15em !important;
+    border-radius: 2px !important;
+    padding: 6px 20px !important;
+    transition: all 0.2s !important;
+}
+.stButton button:hover {
+    background: #00d4ff11 !important;
+    border-color: #00d4ff88 !important;
+    box-shadow: 0 0 12px #00d4ff22 !important;
+}
+
+/* ── File uploader ── */
+[data-testid="stFileUploader"] {
+    border: 1px dashed #00d4ff22 !important;
+    border-radius: 4px !important;
+    background: #050a0f !important;
+}
+
+/* ── Sidebar labels ── */
+.sidebar-section {
+    font-family: 'Orbitron', monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.3em;
+    color: #00d4ff44;
+    text-transform: uppercase;
+    margin: 20px 0 8px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #00d4ff12;
+}
+
+/* ── Scanline overlay ── */
+.scanline {
+    pointer-events: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        #00000008 2px,
+        #00000008 4px
+    );
+    z-index: 999;
+}
+
+/* ── Divider ── */
+hr { border-color: #00d4ff12 !important; margin: 8px 0 !important; }
+
+/* ── RAG doc list ── */
+.doc-item {
+    font-size: 0.7rem;
+    color: #00ffaa88;
+    padding: 5px 0;
+    border-bottom: 1px solid #00d4ff08;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.doc-icon { color: #00d4ff44; }
+
+/* ── Metric number ── */
+.metric-num {
+    font-family: 'Orbitron', monospace;
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #00d4ff;
+}
+.metric-label {
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+    color: #00d4ff44;
+}
+
+/* ── Spinner override ── */
+.stSpinner > div { border-top-color: #00d4ff !important; }
+</style>
+<div class="scanline"></div>
+""", unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ░░ STATE INIT ░░
+# ══════════════════════════════════════════════════════════════════════════
+
+def init_state():
+    defaults = {
+        "chat_history": [],
+        "uploaded_docs": [],
+        "rag_ready": False,
+        "wake_active": False,
+        "detected_object": "SCANNING...",
+        "cam_running": False,
+        "db_status": "OFFLINE",
+        "frame_placeholder": None,
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+init_state()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ░░ PLACEHOLDER INTEGRATION FUNCTIONS — PASTE YOUR LOGIC HERE ░░
+# ══════════════════════════════════════════════════════════════════════════
+
+def process_frame(frame: np.ndarray) -> tuple[np.ndarray, str]:
+    """
+    🔌 PLUG IN YOUR CV2 / DETECTION LOGIC HERE.
+    Args:
+        frame: BGR numpy array from webcam
+    Returns:
+        (annotated_frame, detected_label)
+    """
+    # ── Example: draw a corner bracket overlay ──────────────────────────
+    h, w = frame.shape[:2]
+    color = (0, 212, 255)
+    t = 2
+    s = 30
+    # corners
+    for x, y in [(0,0),(w-s,0),(0,h-s),(w-s,h-s)]:
+        cv2.line(frame, (x,y), (x+s,y), color, t)
+        cv2.line(frame, (x,y), (x,y+s), color, t)
+    # center crosshair
+    cx, cy = w//2, h//2
+    cv2.line(frame, (cx-15,cy), (cx+15,cy), color, 1)
+    cv2.line(frame, (cx,cy-15), (cx,cy+15), color, 1)
+    cv2.circle(frame, (cx,cy), 4, color, 1)
+    # timestamp
+    ts = datetime.now().strftime("%H:%M:%S")
+    cv2.putText(frame, ts, (10, h-10),
+                cv2.FONT_HERSHEY_MONO, 0.45, color, 1)
+    return frame, "AWAITING DETECTION"
+
+
+def build_rag(doc_paths: list[str]) -> bool:
+    """
+    🔌 PLUG IN YOUR LANGCHAIN / RAG SETUP HERE.
+    Args:
+        doc_paths: list of local file paths to uploaded PDFs
+    Returns:
+        True if RAG built successfully
+    """
+    # ── Example stub ────────────────────────────────────────────────────
+    # from langchain.document_loaders import PyPDFLoader
+    # from langchain.text_splitter import RecursiveCharacterTextSplitter
+    # from langchain.vectorstores import FAISS
+    # from langchain.embeddings import HuggingFaceEmbeddings
+    # loader = PyPDFLoader(path); docs = loader.load()
+    # splitter = RecursiveCharacterTextSplitter(chunk_size=500)
+    # chunks = splitter.split_documents(docs)
+    # embeddings = HuggingFaceEmbeddings()
+    # vectorstore = FAISS.from_documents(chunks, embeddings)
+    # st.session_state["vectorstore"] = vectorstore
+    time.sleep(0.8)   # simulate processing
+    return True
+
+
+def ask_ai(query: str, use_rag: bool = False) -> str:
+    """
+    🔌 PLUG IN YOUR GROQ / LLM LOGIC HERE.
+    Args:
+        query:   user question
+        use_rag: whether to inject RAG context
+    Returns:
+        AI response string
+    """
+    # ── Example stub ────────────────────────────────────────────────────
+    # from groq import Groq
+    # client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+    # context = ""
+    # if use_rag and st.session_state.get("vectorstore"):
+    #     docs = st.session_state["vectorstore"].similarity_search(query, k=3)
+    #     context = "\n".join(d.page_content for d in docs)
+    # messages = [{"role":"system","content":"You are Friday, an advanced AI."}]
+    # if context:
+    #     messages.append({"role":"system","content":f"Knowledge base:\n{context}"})
+    # messages.append({"role":"user","content":query})
+    # r = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=messages)
+    # return r.choices[0].message.content
+    rag_note = " [RAG active]" if use_rag else ""
+    return f"Friday response to: '{query}'{rag_note} — connect your Groq API key to activate."
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ░░ SIDEBAR ░░
+# ══════════════════════════════════════════════════════════════════════════
+
+with st.sidebar:
+    st.markdown('<div class="friday-header" style="font-size:1.3rem">⚡ FRIDAY</div>', unsafe_allow_html=True)
+    st.markdown('<div class="friday-sub">SYSTEM PANEL</div>', unsafe_allow_html=True)
+    st.markdown("---")
+
+    # ── Wake word toggle ─────────────────────────────────────────────────
+    st.markdown('<div class="sidebar-section">Wake Word</div>', unsafe_allow_html=True)
+    wake_toggle = st.toggle("Activate 'Friday'", value=st.session_state.wake_active)
+    st.session_state.wake_active = wake_toggle
+
+    # ── Camera toggle ────────────────────────────────────────────────────
+    st.markdown('<div class="sidebar-section">Camera</div>', unsafe_allow_html=True)
+    cam_toggle = st.toggle("Live Feed", value=st.session_state.cam_running)
+    if cam_toggle != st.session_state.cam_running:
+        st.session_state.cam_running = cam_toggle
+        st.rerun()
+
+    cam_index = st.number_input("Device index", min_value=0, max_value=4, value=0, step=1)
+
+    # ── RAG Knowledge Base ───────────────────────────────────────────────
+    st.markdown('<div class="sidebar-section">Knowledge Base</div>', unsafe_allow_html=True)
+
+    uploaded_files = st.file_uploader(
+        "Drop PDFs here",
+        type=["pdf", "txt", "docx"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+    )
+
+    if uploaded_files:
+        paths = []
+        for uf in uploaded_files:
+            name = uf.name
+            if name not in st.session_state.uploaded_docs:
+                st.session_state.uploaded_docs.append(name)
+                # save to temp
+                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(name)[1]) as tmp:
+                    tmp.write(uf.read())
+                    paths.append(tmp.name)
+
+        if paths:
+            with st.spinner("Indexing..."):
+                ok = build_rag(paths)
+            if ok:
+                st.session_state.rag_ready = True
+                st.session_state.db_status = "ONLINE"
+
+    # Doc list
+    if st.session_state.uploaded_docs:
+        for doc in st.session_state.uploaded_docs[-5:]:
+            st.markdown(f'<div class="doc-item"><span class="doc-icon">▸</span>{doc}</div>',
+                        unsafe_allow_html=True)
+
+    if st.session_state.uploaded_docs:
+        if st.button("CLEAR KNOWLEDGE BASE"):
+            st.session_state.uploaded_docs = []
+            st.session_state.rag_ready = False
+            st.session_state.db_status = "OFFLINE"
+            st.rerun()
+
+    # ── System metrics ───────────────────────────────────────────────────
+    st.markdown('<div class="sidebar-section">System</div>', unsafe_allow_html=True)
     try:
-        vectorstore = Chroma(persist_directory="./db", embedding_function=embeddings)
-    except:
-        vectorstore = None
-    return client, vectorstore
-
-def process_pdf(pdf):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        tmp.write(pdf.getvalue())
-        tmp_path = tmp.name
-    
-    loader = PyPDFLoader(tmp_path)
-    docs = loader.load()
-    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-    chunks = splitter.split_documents(docs)
-    
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    
-    if os.path.exists("./db"):
-        vs = Chroma(persist_directory="./db", embedding_function=embeddings)
-        vs.add_documents(chunks)
-    else:
-        vs = Chroma.from_documents(chunks, embeddings, persist_directory="./db")
-    
-    vs.persist()
-    os.unlink(tmp_path)
-    return len(chunks)
-
-def ask_ai(query, client, vectorstore):
-    if not client: return "⚠️ Set GROQ_API_KEY"
-    
-    if vectorstore:
-        llm = ChatGroq(temperature=0.7, model_name="llama-3.3-70b-versatile", groq_api_key=GROQ_KEY)
-        qa = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever(search_kwargs={"k": 3}))
-        return qa.run(query)
-    else:
-        resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": query}],
-            temperature=0.7,
-            max_tokens=300
-        )
-        return resp.choices[0].message.content
-
-def speech_to_text():
-    rec = sr.Recognizer()
-    with sr.Microphone() as src:
-        rec.adjust_for_ambient_noise(src, duration=0.5)
-        audio = rec.listen(src, timeout=5, phrase_time_limit=10)
-    
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(audio.get_wav_data())
-        tmp_path = tmp.name
-    
-    with open(tmp_path, "rb") as f:
-        text = Groq(api_key=GROQ_KEY).audio.transcriptions.create(
-            file=f, model="whisper-large-v3-turbo", response_format="text"
-        )
-    
-    os.unlink(tmp_path)
-    return text
-
-def text_to_speech(text):
-    async def gen():
-        comm = edge_tts.Communicate(text, "en-IN-NeerjaNeural", rate="+10%")
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
-            tmp_path = tmp.name
-        await comm.save(tmp_path)
-        return tmp_path
-    
-    audio = asyncio.run(gen())
-    if not pygame.mixer.get_init(): pygame.mixer.init()
-    pygame.mixer.music.load(audio)
-    pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy(): pygame.time.Clock().tick(10)
-    pygame.mixer.music.unload()
-    os.unlink(audio)
-
-def analyze_frame(frame):
-    processed = frame.copy()
-    h, w = processed.shape[:2]
-    cv2.putText(processed, "AGRI-FRIDAY SCANNING", (10, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 136), 2)
-    cv2.rectangle(processed, (0, 0), (w, h), (0, 255, 136), 3)
-    return processed
-
-def main():
-    st.set_page_config(page_title="Agri-Friday", page_icon="🌱", layout="wide")
-    
-    # GLASS UI CSS
-    st.markdown("""
-    <style>
-    .stApp {background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);}
-    .block-container {background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border-radius: 20px; padding: 2rem !important;}
-    h1, h2, h3 {color: #00ff88 !important; text-shadow: 0 0 20px rgba(0,255,136,0.5);}
-    section[data-testid="stSidebar"] {background: rgba(255,255,255,0.05) !important; backdrop-filter: blur(15px) !important;}
-    section[data-testid="stSidebar"] > div {background: transparent !important;}
-    .stButton>button {background: rgba(0,255,136,0.15) !important; backdrop-filter: blur(10px); border: 1px solid rgba(0,255,136,0.3) !important; 
-                      border-radius: 12px !important; color: #00ff88 !important; font-weight: 600 !important;}
-    .stTextInput>div>div>input {background: rgba(255,255,255,0.05) !important; backdrop-filter: blur(10px) !important; 
-                                 border: 1px solid rgba(255,255,255,0.1) !important; border-radius: 12px !important; color: #fff !important;}
-    .chat-user {background: rgba(0,255,136,0.12); backdrop-filter: blur(10px); border: 1px solid rgba(0,255,136,0.3); 
-                border-radius: 15px; padding: 15px; margin: 10px 0 10px 20%;}
-    .chat-ai {background: rgba(100,100,255,0.12); backdrop-filter: blur(10px); border: 1px solid rgba(100,100,255,0.3); 
-              border-radius: 15px; padding: 15px; margin: 10px 20% 10px 0;}
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # SESSION STATE
-    if 'chat' not in st.session_state: st.session_state.chat = []
-    if 'client' not in st.session_state: st.session_state.client, st.session_state.vs = init_ai()
-    if 'docs' not in st.session_state: st.session_state.docs = []
-    if 'cam' not in st.session_state: st.session_state.cam = False
-    
-    # HEADER
-    st.markdown("<h1 style='text-align: center;'>🌱 AGRI-FRIDAY</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #00ff88;'>AI Agriculture • Glass UI • RAG • Voice • Vision</p>", unsafe_allow_html=True)
-    
-    # SIDEBAR
-    with st.sidebar:
-        st.markdown("### 📚 Knowledge Base")
-        pdfs = st.file_uploader("Upload PDFs", type=['pdf'], accept_multiple_files=True)
-        
-        if pdfs:
-            for pdf in pdfs:
-                if pdf.name not in [d['name'] for d in st.session_state.docs]:
-                    with st.spinner(f"Processing {pdf.name}..."):
-                        chunks = process_pdf(pdf)
-                        st.session_state.docs.append({'name': pdf.name, 'chunks': chunks})
-                        st.session_state.client, st.session_state.vs = init_ai()
-                        st.success(f"✅ {chunks} chunks")
-        
-        if st.session_state.docs:
-            st.markdown("**Uploaded:**")
-            for doc in st.session_state.docs:
-                st.text(f"📄 {doc['name']}")
-        
-        st.markdown("### ⚙️ Settings")
-        st.session_state.cam = st.toggle("📹 Camera", value=st.session_state.cam)
-        
-        if st.button("🗑️ Clear Chat"): 
-            st.session_state.chat = []
-            st.rerun()
-    
-    # MAIN - TWO COLUMNS
-    col1, col2 = st.columns([1, 1])
-    
-    # CAMERA
-    with col1:
-        st.markdown("### 📹 Smart Camera")
-        cam_ph = st.empty()
-        
-        if st.session_state.cam:
-            try:
-                cap = cv2.VideoCapture(0)
-                ret, frame = cap.read()
-                if ret:
-                    processed = analyze_frame(frame)
-                    cam_ph.image(cv2.cvtColor(processed, cv2.COLOR_BGR2RGB), use_container_width=True)
-                else:
-                    cam_ph.error("❌ Camera failed")
-                cap.release()
-            except Exception as e:
-                cam_ph.error(f"❌ {e}")
-        else:
-            cam_ph.info("📹 Camera off")
-    
-    # CHAT
-    with col2:
-        st.markdown("### 💬 Chat Assistant")
-        
-        chat_ph = st.container(height=400)
-        with chat_ph:
-            if not st.session_state.chat:
-                st.markdown("<div style='text-align: center; padding: 80px 20px; color: #00ff88;'><h3>👋 Hello!</h3><p>Upload PDFs or ask questions</p></div>", unsafe_allow_html=True)
-            else:
-                for msg in st.session_state.chat:
-                    if msg['role'] == 'user':
-                        st.markdown(f"<div class='chat-user'><strong>🧑‍🌾 You:</strong><br>{msg['content']}</div>", unsafe_allow_html=True)
-                    else:
-                        st.markdown(f"<div class='chat-ai'><strong>🌱 AI:</strong><br>{msg['content']}</div>", unsafe_allow_html=True)
-        
-        # INPUT
-        c1, c2 = st.columns([4, 1])
+        import psutil
+        cpu = psutil.cpu_percent(interval=0.1)
+        ram = psutil.virtual_memory().percent
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown(f'<div class="metric-num">{cpu:.0f}<span style="font-size:0.7rem">%</span></div><div class="metric-label">CPU</div>', unsafe_allow_html=True)
         with c2:
-            voice_btn = st.button("🎤", use_container_width=True)
-        
-        user_input = st.text_input("Ask...", placeholder="e.g., fertilizer for tomatoes?", label_visibility="collapsed")
-        send_btn = st.button("📤 Send", use_container_width=True, type="primary")
-        
-        # VOICE
-        if voice_btn:
-            with st.spinner("🎤 Listening..."):
-                try:
-                    text = speech_to_text()
-                    st.session_state.temp_voice = text
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ {e}")
-        
-        if 'temp_voice' in st.session_state:
-            user_input = st.session_state.temp_voice
-            del st.session_state.temp_voice
-            send_btn = True
-        
-        # SEND
-        if send_btn and user_input:
-            st.session_state.chat.append({'role': 'user', 'content': user_input})
-            
-            with st.spinner("🤔 Thinking..."):
-                response = ask_ai(user_input, st.session_state.client, st.session_state.vs)
-            
-            st.session_state.chat.append({'role': 'assistant', 'content': response})
-            
-            try:
-                text_to_speech(response)
-            except:
-                pass
-            
+            st.markdown(f'<div class="metric-num">{ram:.0f}<span style="font-size:0.7rem">%</span></div><div class="metric-label">RAM</div>', unsafe_allow_html=True)
+    except:
+        st.markdown('<div style="font-size:0.7rem;color:#00d4ff33">psutil not installed</div>', unsafe_allow_html=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ░░ MAIN LAYOUT ░░
+# ══════════════════════════════════════════════════════════════════════════
+
+# ── Header ───────────────────────────────────────────────────────────────
+st.markdown('<div class="friday-header">FRIDAY</div>', unsafe_allow_html=True)
+st.markdown('<div class="friday-sub">ADVANCED AI ASSISTANT  •  v3.0</div>', unsafe_allow_html=True)
+
+# ── Status bar ───────────────────────────────────────────────────────────
+wake_cls  = "badge-on"  if st.session_state.wake_active  else "badge-off"
+wake_dot  = "dot-on"    if st.session_state.wake_active  else "dot-off"
+wake_txt  = "WAKE ACTIVE" if st.session_state.wake_active else "WAKE INACTIVE"
+
+cam_cls   = "badge-on"  if st.session_state.cam_running  else "badge-off"
+cam_dot   = "dot-on"    if st.session_state.cam_running  else "dot-off"
+cam_txt   = "CAMERA ON" if st.session_state.cam_running  else "CAMERA OFF"
+
+rag_cls   = "badge-on"  if st.session_state.rag_ready    else "badge-warn"
+rag_dot   = "dot-on"    if st.session_state.rag_ready    else "dot-warn"
+rag_txt   = "RAG READY" if st.session_state.rag_ready    else "NO DOCS"
+
+db_cls    = "badge-on"  if st.session_state.db_status == "ONLINE" else "badge-off"
+db_dot    = "dot-on"    if st.session_state.db_status == "ONLINE" else "dot-off"
+
+st.markdown(f"""
+<div class="status-row">
+  <span class="badge {wake_cls}"><span class="dot {wake_dot}"></span>{wake_txt}</span>
+  <span class="badge {cam_cls}"><span class="dot {cam_dot}"></span>{cam_txt}</span>
+  <span class="badge {rag_cls}"><span class="dot {rag_dot}"></span>{rag_txt}</span>
+  <span class="badge {db_cls}"><span class="dot {db_dot}"></span>DB {st.session_state.db_status}</span>
+  <span class="badge badge-warn"><span class="dot dot-warn"></span>{st.session_state.detected_object}</span>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown("---")
+
+# ── Two-column layout ─────────────────────────────────────────────────────
+col_cam, col_chat = st.columns([1.1, 1], gap="medium")
+
+# ════════════════════════════════════════
+# LEFT: CAMERA FEED
+# ════════════════════════════════════════
+with col_cam:
+    st.markdown('<div class="panel-label">▸ VISION FEED</div>', unsafe_allow_html=True)
+
+    frame_slot = st.empty()
+
+    if st.session_state.cam_running:
+        cap = cv2.VideoCapture(int(cam_index))
+        if not cap.isOpened():
+            frame_slot.error("Camera not accessible.")
+        else:
+            # Show up to 200 frames per run (refresh stops naturally; user re-toggles)
+            for _ in range(200):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                annotated, label = process_frame(frame)
+                st.session_state.detected_object = label
+                rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+                frame_slot.image(rgb, use_container_width=True)
+                time.sleep(0.03)
+            cap.release()
+    else:
+        frame_slot.markdown("""
+        <div style="aspect-ratio:16/9;background:#050a0f;border:1px solid #00d4ff12;
+                    border-radius:2px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
+            <div style="font-family:'Orbitron',monospace;font-size:0.7rem;letter-spacing:0.25em;color:#00d4ff22">NO SIGNAL</div>
+            <div style="font-size:0.6rem;color:#00d4ff11;letter-spacing:0.15em">ENABLE CAMERA IN SIDEBAR</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Detected object display
+    st.markdown(f'<div class="detect-pill">DETECTED &nbsp;▸&nbsp; {st.session_state.detected_object}</div>',
+                unsafe_allow_html=True)
+
+    # ── Manual snapshot ──────────────────────────────────────────────────
+    if st.button("⬡  CAPTURE FRAME"):
+        cap2 = cv2.VideoCapture(int(cam_index))
+        ret, snap = cap2.read()
+        cap2.release()
+        if ret:
+            ann, lbl = process_frame(snap)
+            fname = f"snap_{datetime.now().strftime('%H%M%S')}.png"
+            cv2.imwrite(fname, ann)
+            st.success(f"Saved → {fname}")
+
+
+# ════════════════════════════════════════
+# RIGHT: CHAT INTERFACE
+# ════════════════════════════════════════
+with col_chat:
+    st.markdown('<div class="panel-label">▸ CHAT INTERFACE</div>', unsafe_allow_html=True)
+
+    # ── Chat history ─────────────────────────────────────────────────────
+    chat_html = '<div class="chat-box" id="chatbox">'
+    if not st.session_state.chat_history:
+        chat_html += '<div style="margin:auto;text-align:center;color:#00d4ff18;font-size:0.7rem;letter-spacing:0.2em">AWAITING INPUT</div>'
+    for msg in st.session_state.chat_history:
+        if msg["role"] == "user":
+            chat_html += f'<div class="msg-user"><div class="msg-label">YOU</div>{msg["content"]}</div>'
+        else:
+            chat_html += f'<div class="msg-ai"><div class="msg-label">FRIDAY</div>{msg["content"]}</div>'
+    chat_html += '</div>'
+    st.markdown(chat_html, unsafe_allow_html=True)
+
+    # ── Input row ────────────────────────────────────────────────────────
+    inp_col, btn_col = st.columns([5, 1])
+    with inp_col:
+        user_input = st.text_input(
+            "Query",
+            placeholder="Ask Friday anything...",
+            label_visibility="collapsed",
+            key="chat_input",
+        )
+    with btn_col:
+        send = st.button("SEND")
+
+    # ── Quick commands ───────────────────────────────────────────────────
+    st.markdown('<div style="font-size:0.6rem;letter-spacing:0.15em;color:#00d4ff33;margin:8px 0 4px 0">QUICK</div>', unsafe_allow_html=True)
+    q1, q2, q3, q4 = st.columns(4)
+    quick = None
+    with q1:
+        if st.button("Weather"):   quick = "What's the weather today?"
+    with q2:
+        if st.button("Summary"):   quick = "Summarize the uploaded document."
+    with q3:
+        if st.button("Status"):    quick = "What do you see in the camera?"
+    with q4:
+        if st.button("Help"):      quick = "What can you do?"
+
+    # ── Process query ─────────────────────────────────────────────────────
+    query = quick or (user_input if send else None)
+
+    if query:
+        st.session_state.chat_history.append({"role": "user", "content": query})
+        with st.spinner(""):
+            response = ask_ai(query, use_rag=st.session_state.rag_ready)
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
+        st.rerun()
+
+    # ── Clear chat ────────────────────────────────────────────────────────
+    if st.session_state.chat_history:
+        if st.button("CLEAR CHAT"):
+            st.session_state.chat_history = []
             st.rerun()
 
-if __name__ == "__main__":
-    main()
+    # ── RAG status panel ─────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown('<div class="panel-label">▸ KNOWLEDGE BASE</div>', unsafe_allow_html=True)
+
+    if st.session_state.rag_ready:
+        doc_count = len(st.session_state.uploaded_docs)
+        st.markdown(f"""
+        <div style="display:flex;gap:20px;align-items:center;margin:8px 0">
+            <div><div class="metric-num">{doc_count}</div><div class="metric-label">DOCS INDEXED</div></div>
+            <div style="flex:1;padding:10px 14px;background:#00ffaa08;border:1px solid #00ffaa22;border-radius:2px;font-size:0.72rem;color:#00ffaa88">
+                RAG pipeline active — answers grounded in your documents.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="padding:12px 14px;background:#080e15;border:1px dashed #00d4ff18;
+                    border-radius:2px;font-size:0.72rem;color:#00d4ff33;letter-spacing:0.1em">
+            Upload PDFs in the sidebar to activate document-grounded answers.
+        </div>
+        """, unsafe_allow_html=True)
