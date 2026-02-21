@@ -1,0 +1,16 @@
+streamlit
+groq
+langchain
+langchain-community
+langchain-groq
+sentence-transformers
+chromadb
+pypdf
+opencv-python
+numpy
+pillow
+SpeechRecognition
+edge-tts
+pygame
+pyaudio
+python-dotenv
