@@ -1,43 +1,27 @@
 # ─── FRIDAY DASHBOARD — REQUIREMENTS ──────────────────────────────────────
 
-# Server
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
-python-multipart==0.0.9
-websockets==12.0
-python-dotenv==1.0.1
-pydantic==2.7.1
+# Friday Dashboard — Streamlit Cloud requirements
 
-# AI / LLM
+# Core
+streamlit>=1.35.0
+python-dotenv==1.0.1
+
+# AI
 groq==0.9.0
 
-# Vision
-opencv-python-headless==4.10.0.84
-numpy==1.26.4
-langchain-huggingface
-
-# RAG / Knowledge Base
+# RAG
 langchain==0.2.6
 langchain-community==0.2.6
+langchain-huggingface==0.0.3
+langchain-text-splitters==0.2.4
 faiss-cpu==1.8.0
 pypdf==4.2.0
 sentence-transformers==3.0.1
 
-# TTS (optional — for server-side voice)
-edge-tts==6.1.12
+# Vision (headless for cloud)
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+Pillow==10.3.0
 
-# Audio (optional — if using Groq Whisper STT from server)
+# HTTP
 requests==2.32.3
-
-# Extras from your existing friday.py (keep if needed)
-# mediapipe==0.10.14
-# pvporcupine==3.0.2
-# pvrecorder==1.2.2
-# SpeechRecognition==3.10.4
-# pygame==2.6.0
-# supabase==2.5.3
-# beautifulsoup4==4.12.3
-# duckduckgo-search==6.2.1
-# pyautogui==0.9.54
-# psutil==5.9.8
-# Pillow==10.3.0
