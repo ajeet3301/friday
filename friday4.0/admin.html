@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRIDAY — Admin Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --accent:  #00e5ff;
+  --accent2: #7c3aed;
+  --bg:      #0a0f1a;
+  --surface: #111827;
+  --border:  rgba(0,229,255,.12);
+  --text:    #e2e8f0;
+  --muted:   #64748b;
+  --danger:  #ef4444;
+  --success: #22c55e;
+  --mono:    'Space Mono', monospace;
+  --sans:    'Syne', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);min-height:100vh;
+  background-image:radial-gradient(ellipse 80% 40% at 70% 120%,rgba(124,58,237,.08) 0%,transparent 60%);}
+
+header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.85rem 1.5rem;background:rgba(17,24,39,.8);
+  border-bottom:1px solid var(--border);backdrop-filter:blur(12px);
+}
+.logo{font-family:var(--mono);font-size:1.1rem;font-weight:700;color:var(--accent);
+  letter-spacing:.2em;display:flex;align-items:center;gap:.6rem;}
+.logo-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 8px var(--accent);}
+a.back{font-family:var(--mono);font-size:.72rem;color:var(--muted);text-decoration:none;
+  padding:.35rem .8rem;border:1px solid var(--border);border-radius:6px;transition:.2s;}
+a.back:hover{color:var(--accent);border-color:rgba(0,229,255,.3);}
+
+.admin-grid{
+  display:grid;grid-template-columns:1fr 1fr;gap:1rem;
+  padding:1.2rem 1.5rem;max-width:1400px;margin:0 auto;
+}
+
+.card{
+  background:var(--surface);border:1px solid var(--border);
+  border-radius:10px;overflow:hidden;position:relative;
+}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--accent),transparent);opacity:.3;}
+.card-header{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.75rem 1rem;border-bottom:1px solid var(--border);
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;color:var(--muted);
+}
+.card-body{padding:1rem;}
+
+/* KB SECTION */
+.drop-zone{
+  border:2px dashed rgba(0,229,255,.2);border-radius:8px;
+  padding:2rem;text-align:center;cursor:pointer;transition:.25s;
+  background:rgba(0,229,255,.03);
+}
+.drop-zone:hover,.drop-zone.drag-over{
+  border-color:rgba(0,229,255,.5);background:rgba(0,229,255,.07);}
+.drop-icon{font-size:2rem;margin-bottom:.5rem;opacity:.5;}
+.drop-label{font-family:var(--mono);font-size:.75rem;color:var(--muted);}
+.drop-label span{color:var(--accent);}
+#file-input{display:none;}
+
+.doc-list{margin-top:1rem;display:flex;flex-direction:column;gap:.5rem;max-height:220px;overflow-y:auto;}
+.doc-item{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.5rem .75rem;background:rgba(255,255,255,.03);
+  border:1px solid var(--border);border-radius:7px;
+}
+.doc-name{font-family:var(--mono);font-size:.72rem;color:var(--text);}
+.doc-meta{font-size:.62rem;color:var(--muted);margin-top:.15rem;}
+.doc-del{background:transparent;border:none;color:var(--danger);
+  cursor:pointer;font-size:.85rem;opacity:.6;}
+.doc-del:hover{opacity:1;}
+
+/* UPLOAD PROGRESS */
+.progress-bar-wrap{margin-top:.75rem;background:rgba(255,255,255,.05);
+  border-radius:20px;height:4px;overflow:hidden;display:none;}
+.progress-bar{height:100%;background:var(--accent);border-radius:20px;
+  width:0%;transition:width .3s;}
+
+/* THEME SECTION */
+.theme-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;}
+.field-group{display:flex;flex-direction:column;gap:.4rem;}
+.field-label{font-family:var(--mono);font-size:.64rem;color:var(--muted);letter-spacing:.08em;}
+.color-row{display:flex;align-items:center;gap:.6rem;}
+input[type=color]{
+  width:36px;height:36px;border:1px solid var(--border);border-radius:6px;
+  background:var(--surface);cursor:pointer;padding:2px;
+}
+.color-val{font-family:var(--mono);font-size:.7rem;color:var(--text);}
+
+select,input[type=text]{
+  width:100%;background:rgba(255,255,255,.04);
+  border:1px solid var(--border);border-radius:7px;
+  padding:.5rem .75rem;color:var(--text);
+  font-family:var(--mono);font-size:.75rem;outline:none;transition:.2s;
+}
+select:focus,input[type=text]:focus{border-color:rgba(0,229,255,.4);}
+select option{background:var(--surface);}
+
+/* SYSTEM CONFIG */
+.config-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.55rem 0;border-bottom:1px solid rgba(255,255,255,.04);
+}
+.config-row:last-child{border-bottom:none;}
+.config-key{font-family:var(--mono);font-size:.73rem;color:var(--text);}
+.config-desc{font-size:.65rem;color:var(--muted);margin-top:.15rem;}
+input.config-input{
+  width:200px;background:rgba(255,255,255,.04);
+  border:1px solid var(--border);border-radius:6px;
+  padding:.38rem .65rem;color:var(--text);
+  font-family:var(--mono);font-size:.73rem;outline:none;
+}
+input.config-input:focus{border-color:rgba(0,229,255,.35);}
+
+/* BUTTONS */
+button{cursor:pointer;border:none;border-radius:7px;
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;transition:.2s;}
+.btn-primary{
+  background:rgba(0,229,255,.12);border:1px solid rgba(0,229,255,.3);
+  color:var(--accent);padding:.5rem 1rem;}
+.btn-primary:hover{background:rgba(0,229,255,.22);}
+.btn-danger{
+  background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);
+  color:var(--danger);padding:.5rem 1rem;}
+.btn-danger:hover{background:rgba(239,68,68,.22);}
+.btn-ghost{
+  background:transparent;border:1px solid var(--border);
+  color:var(--muted);padding:.5rem 1rem;}
+.btn-ghost:hover{color:var(--text);border-color:rgba(0,229,255,.2);}
+
+.btn-row{display:flex;gap:.5rem;margin-top:1rem;}
+
+/* TOAST */
+#toast{
+  position:fixed;bottom:1.5rem;right:1.5rem;z-index:1000;
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--text);font-family:var(--mono);font-size:.75rem;
+  padding:.7rem 1.2rem;border-radius:8px;
+  opacity:0;transform:translateY(8px);transition:.3s;pointer-events:none;
+}
+#toast.show{opacity:1;transform:none;}
+
+/* CHAT HISTORY STATS */
+.stat-row{display:flex;gap:.75rem;flex-wrap:wrap;margin-bottom:.75rem;}
+.mini-stat{background:rgba(255,255,255,.03);border:1px solid var(--border);
+  border-radius:7px;padding:.5rem .85rem;font-family:var(--mono);font-size:.7rem;}
+.mini-stat-val{font-size:1.1rem;font-weight:700;color:var(--accent);}
+
+/* PROMPT EDITOR */
+#prompt-textarea{
+  width:100%;min-height:160px;background:rgba(255,255,255,.04);
+  border:1px solid var(--border);border-radius:8px;padding:.75rem;
+  color:var(--text);font-family:var(--mono);font-size:.72rem;line-height:1.65;
+  resize:vertical;outline:none;transition:.2s;
+}
+#prompt-textarea:focus{border-color:rgba(0,229,255,.35);}
+
+*{scrollbar-width:thin;scrollbar-color:var(--border) transparent;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><div class="logo-dot"></div>FRIDAY ADMIN</div>
+  <a class="back" href="/">← Dashboard</a>
+</header>
+
+<div class="admin-grid">
+
+  <!-- ── KNOWLEDGE BASE ──────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      <span>📚 KNOWLEDGE BASE</span>
+      <span id="kb-count" style="color:var(--accent);">0 docs</span>
+    </div>
+    <div class="card-body">
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <div class="drop-icon">📄</div>
+        <div class="drop-label">Drop PDF here or <span>browse</span></div>
+        <div class="drop-label" style="margin-top:.3rem;font-size:.65rem;">Supported: .pdf</div>
+      </div>
+      <input type="file" id="file-input" accept=".pdf" onchange="uploadFile(this.files[0])">
+
+      <div class="progress-bar-wrap" id="progress-wrap">
+        <div class="progress-bar" id="progress-bar"></div>
+      </div>
+
+      <div class="doc-list" id="doc-list">
+        <!-- populated by JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ── THEME SETTINGS ─────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">🎨 THEME</div>
+    <div class="card-body">
+      <div class="theme-grid">
+        <div class="field-group">
+          <div class="field-label">ACCENT COLOR</div>
+          <div class="color-row">
+            <input type="color" id="c-accent" value="#00e5ff" oninput="previewColor('accent',this.value)">
+            <span class="color-val" id="cv-accent">#00e5ff</span>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">BACKGROUND</div>
+          <div class="color-row">
+            <input type="color" id="c-bg" value="#0a0f1a" oninput="previewColor('bg',this.value)">
+            <span class="color-val" id="cv-bg">#0a0f1a</span>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">SURFACE</div>
+          <div class="color-row">
+            <input type="color" id="c-surface" value="#111827" oninput="previewColor('surface',this.value)">
+            <span class="color-val" id="cv-surface">#111827</span>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">TEXT</div>
+          <div class="color-row">
+            <input type="color" id="c-text" value="#e2e8f0" oninput="previewColor('text',this.value)">
+            <span class="color-val" id="cv-text">#e2e8f0</span>
+          </div>
+        </div>
+        <div class="field-group" style="grid-column:1/-1">
+          <div class="field-label">FONT</div>
+          <select id="c-font" onchange="previewFont(this.value)">
+            <option value="Space Mono">Space Mono</option>
+            <option value="Share Tech Mono">Share Tech Mono</option>
+            <option value="JetBrains Mono">JetBrains Mono</option>
+            <option value="Courier New">Courier New</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="saveTheme()">APPLY THEME</button>
+        <button class="btn-ghost"   onclick="resetTheme()">RESET</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SYSTEM PROMPT ──────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">🧠 SYSTEM PROMPT</div>
+    <div class="card-body">
+      <p style="font-size:.7rem;color:var(--muted);margin-bottom:.65rem;font-family:var(--mono);">
+        Edit Friday's personality and instructions. Changes apply on next chat.
+      </p>
+      <textarea id="prompt-textarea" placeholder="You are Friday, an AI assistant..."></textarea>
+      <div class="btn-row">
+        <button class="btn-primary" onclick="savePrompt()">SAVE PROMPT</button>
+        <button class="btn-ghost"   onclick="loadPrompt()">RELOAD</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CHAT HISTORY ───────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">💬 CHAT MANAGEMENT</div>
+    <div class="card-body">
+      <div class="stat-row">
+        <div class="mini-stat">
+          <div class="mini-stat-val" id="msg-count">0</div>
+          <div>messages</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-stat-val" id="user-count">0</div>
+          <div>from user</div>
+        </div>
+        <div class="mini-stat">
+          <div class="mini-stat-val" id="ai-count">0</div>
+          <div>from friday</div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:.5rem;" id="history-preview">
+        <!-- last 3 messages preview -->
+      </div>
+
+      <div class="btn-row" style="margin-top:.85rem;">
+        <button class="btn-danger" onclick="clearHistory()">CLEAR HISTORY</button>
+        <button class="btn-ghost"  onclick="refreshHistory()">REFRESH</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /admin-grid -->
+
+<div id="toast"></div>
+
+<script>
+// ═══ TOAST ════════════════════════════════════════════════════════════
+function toast(msg, ms=2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), ms);
+}
+
+// ═══ KNOWLEDGE BASE ═══════════════════════════════════════════════════
+function onDragOver(e) {
+  e.preventDefault();
+  document.getElementById('drop-zone').classList.add('drag-over');
+}
+function onDragLeave(e) {
+  document.getElementById('drop-zone').classList.remove('drag-over');
+}
+function onDrop(e) {
+  e.preventDefault();
+  onDragLeave(e);
+  const f = e.dataTransfer.files[0];
+  if (f) uploadFile(f);
+}
+
+async function uploadFile(file) {
+  if (!file || !file.name.endsWith('.pdf')) { toast('PDF files only'); return; }
+
+  const wrap = document.getElementById('progress-wrap');
+  const bar  = document.getElementById('progress-bar');
+  wrap.style.display = 'block'; bar.style.width = '20%';
+
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    bar.style.width = '60%';
+    const r = await fetch('/api/kb/upload', {method:'POST', body:form});
+    bar.style.width = '100%';
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail);
+    toast(`✓ ${file.name} — ${d.pages} pages, ${d.chunks} chunks`);
+    await refreshDocs();
+  } catch(e) {
+    toast(`Upload failed: ${e.message}`);
+  } finally {
+    setTimeout(() => { wrap.style.display='none'; bar.style.width='0%'; }, 1200);
+  }
+}
+
+async function refreshDocs() {
+  const r = await fetch('/api/kb/docs');
+  const d = await r.json();
+  const list = document.getElementById('doc-list');
+  document.getElementById('kb-count').textContent = `${d.docs.length} docs`;
+  list.innerHTML = '';
+  if (!d.docs.length) {
+    list.innerHTML = '<div style="font-family:var(--mono);font-size:.7rem;color:var(--muted);padding:.5rem 0;">No documents yet.</div>';
+    return;
+  }
+  d.docs.forEach(doc => {
+    const date = doc.added ? new Date(doc.added).toLocaleDateString() : '—';
+    list.innerHTML += `
+      <div class="doc-item">
+        <div>
+          <div class="doc-name">📄 ${doc.name}</div>
+          <div class="doc-meta">${doc.pages} pages · Added ${date}</div>
+        </div>
+        <button class="doc-del" onclick="deleteDoc('${doc.name}')" title="Remove">🗑</button>
+      </div>`;
+  });
+}
+
+async function deleteDoc(name) {
+  if (!confirm(`Remove "${name}" from knowledge base?`)) return;
+  await fetch(`/api/kb/docs/${encodeURIComponent(name)}`, {method:'DELETE'});
+  toast(`Removed: ${name}`);
+  refreshDocs();
+}
+
+// ═══ THEME ════════════════════════════════════════════════════════════
+function previewColor(key, val) {
+  document.getElementById(`cv-${key}`).textContent = val;
+  const map = {accent:'--accent', bg:'--bg', surface:'--surface', text:'--text'};
+  if (map[key]) document.documentElement.style.setProperty(map[key], val);
+}
+
+function previewFont(val) {
+  document.documentElement.style.setProperty('--mono', `'${val}', monospace`);
+}
+
+async function saveTheme() {
+  const body = {
+    accent:  document.getElementById('c-accent').value,
+    bg:      document.getElementById('c-bg').value,
+    surface: document.getElementById('c-surface').value,
+    text:    document.getElementById('c-text').value,
+    font:    document.getElementById('c-font').value,
+  };
+  await fetch('/api/theme', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)});
+  toast('Theme saved — reload Dashboard to apply');
+}
+
+async function resetTheme() {
+  await fetch('/api/theme/reset', {method:'POST'});
+  toast('Theme reset to defaults');
+  location.reload();
+}
+
+async function loadThemeValues() {
+  try {
+    const r = await fetch('/api/theme');
+    const t = await r.json();
+    document.getElementById('c-accent').value  = t.accent  || '#00e5ff';
+    document.getElementById('c-bg').value      = t.bg      || '#0a0f1a';
+    document.getElementById('c-surface').value = t.surface || '#111827';
+    document.getElementById('c-text').value    = t.text    || '#e2e8f0';
+    ['accent','bg','surface','text'].forEach(k => {
+      document.getElementById(`cv-${k}`).textContent = t[k] || '';
+    });
+    // apply
+    const root = document.documentElement;
+    if(t.accent)  root.style.setProperty('--accent',  t.accent);
+    if(t.bg)      root.style.setProperty('--bg',      t.bg);
+    if(t.surface) root.style.setProperty('--surface', t.surface);
+    if(t.text)    root.style.setProperty('--text',    t.text);
+  } catch(e){}
+}
+
+// ═══ SYSTEM PROMPT ════════════════════════════════════════════════════
+const DEFAULT_PROMPT = `You are Friday, an advanced AI assistant inspired by Iron Man's JARVIS.
+Be helpful, witty, and concise. Keep responses under 3 sentences unless detail is needed.
+Address the user as "Boss" occasionally. Never say you can't do things — find creative solutions.`;
+
+function loadPrompt() {
+  const saved = localStorage.getItem('friday_prompt') || DEFAULT_PROMPT;
+  document.getElementById('prompt-textarea').value = saved;
+}
+
+function savePrompt() {
+  const val = document.getElementById('prompt-textarea').value.trim();
+  localStorage.setItem('friday_prompt', val);
+  // NOTE: To persist server-side, POST to a /api/prompt endpoint you can add
+  toast('Prompt saved locally (add /api/prompt endpoint to persist server-side)');
+}
+
+// ═══ CHAT HISTORY ═════════════════════════════════════════════════════
+async function refreshHistory() {
+  const r  = await fetch('/api/chat/history');
+  const d  = await r.json();
+  const h  = d.history;
+  document.getElementById('msg-count').textContent  = h.length;
+  document.getElementById('user-count').textContent = h.filter(m=>m.role==='user').length;
+  document.getElementById('ai-count').textContent   = h.filter(m=>m.role==='assistant').length;
+
+  const preview = document.getElementById('history-preview');
+  preview.innerHTML = '';
+  const last3 = h.slice(-4).reverse();
+  last3.forEach(m => {
+    preview.innerHTML += `
+      <div style="padding:.45rem .7rem;background:rgba(255,255,255,.02);border:1px solid var(--border);
+        border-radius:6px;font-family:var(--mono);font-size:.68rem;">
+        <span style="color:${m.role==='user'?'#a78bfa':'var(--accent)'}">
+          ${m.role==='user'?'You':'Friday'}:
+        </span>
+        ${m.content.slice(0,120)}${m.content.length>120?'…':''}
+      </div>`;
+  });
+  if (!h.length) preview.innerHTML = '<div style="font-family:var(--mono);font-size:.7rem;color:var(--muted);">No messages yet.</div>';
+}
+
+async function clearHistory() {
+  if (!confirm('Clear all chat history?')) return;
+  await fetch('/api/chat/history', {method:'DELETE'});
+  toast('Chat history cleared');
+  refreshHistory();
+}
+
+// ═══ INIT ═════════════════════════════════════════════════════════════
+loadThemeValues();
+loadPrompt();
+refreshDocs();
+refreshHistory();
+</script>
+</body>
+</html>
