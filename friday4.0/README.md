@@ -1,88 +1,158 @@
-# FRIDAY AI Dashboard v3.0
+# FRIDAY LIVE WITH ADMIN PANEL
 
-## Quick Start
+## SETUP
 
 ```bash
-# 1. Clone / copy files
-cd friday_dashboard
-
-# 2. Install dependencies
-pip install -r requirements.txt --break-system-packages
-
-# 3. Set up environment
-cp .env.example .env
-# Edit .env — add your GROQ_API_KEY at minimum
-
-# 4. Run
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-
-# Open browser → http://localhost:8000
-# Admin panel  → http://localhost:8000/admin
+pip install streamlit python-dotenv
 ```
 
----
+## RUN
 
-## File Structure
-
+### Admin Panel (Port 8503)
+```bash
+streamlit run friday_admin.py --server.port 8503
 ```
-friday_dashboard/
-├── main.py               ← FastAPI backend (ALL logic here)
-├── requirements.txt
-├── .env.example          ← Copy to .env and fill keys
-├── static/
-│   ├── index.html        ← Main dashboard UI
-│   └── admin.html        ← Admin panel
-├── uploads/              ← PDF uploads land here (auto-created)
-└── knowledge_base/       ← FAISS index + metadata (auto-created)
+**Login:** admin / friday123
+
+### Friday Live (Port 8501)
+```bash
+streamlit run friday_live.py
 ```
 
----
+## FEATURES
 
-## Where to Plug In Your Code
+### ADMIN PANEL (8503)
+**🔑 API & Models**
+- Groq API key configuration
+- Chat model selection
+- Vision model selection
+- Whisper model selection
+- LLM parameters (tokens, temperature)
+- Enable/disable RAG
 
-### 1. Object Detection (Camera)
-In `main.py`, find `VisionStream._process_frame()`:
+**🎨 Theme & UI**
+- Primary/secondary/red colors
+- Background image selection
+  - Dark gradient (default)
+  - Camera blur
+  - Space stars
+  - Mountains
+  - Forest
+  - City night
+- Background blur control
+- Vignette intensity
+- Glass effect (opacity, blur)
+- Live preview
+
+**📚 Knowledge Base**
+- Upload PDF/TXT/MD files
+- View all files
+- Delete files
+- Files used for RAG when enabled
+
+**🔊 Voice & Prompts**
+- TTS voice selection (8 voices)
+  - 🇮🇳 Indian English (Neerja, Prabhat)
+  - 🇺🇸 US English (Jenny, Guy)
+  - 🇬🇧 UK English (Sonia, Ryan)
+  - 🇮🇳 Hindi (Swara, Madhur)
+- Whisper model
+- System prompt (personality)
+
+### USER APP (8501)
+- Full-screen camera view
+- Tap mic to talk
+- Voice responses
+- Camera analysis (📸 button)
+- Flip camera (🔄 button)
+- No settings (all controlled by admin)
+
+## WORKFLOW
+
+1. **Admin** configures settings (port 8503)
+   - Set API key
+   - Choose models
+   - Upload knowledge files
+   - Customize theme
+   - Set voice
+
+2. **Save** configurations
+
+3. **Restart** Friday Live (port 8501)
+
+4. **Users** access Friday Live
+   - Just tap mic and talk
+   - Can't change settings
+   - Clean, simple interface
+
+## FILES
+
+```
+project/
+├── friday_admin.py          # Admin panel
+├── friday_live.py           # User app
+├── friday_config.json       # Config (auto-created)
+├── friday_theme.json        # Theme (auto-created)
+└── friday_knowledge/        # Knowledge files (auto-created)
+```
+
+## CHANGE ADMIN PASSWORD
+
+**friday_admin.py lines 16-17:**
 ```python
-def _process_frame(self, frame: np.ndarray) -> np.ndarray:
-    # ← PASTE your YOLO / MediaPipe / plant detection here
-    # Set state["detected_object"] = "plant"  ← updates the UI badge
-    return frame
+ADMIN_USER = "your_username"
+ADMIN_PASS = "your_password"
 ```
 
-### 2. AI Response Logic
-In `main.py`, find `Brain.ask_ai()`:
-```python
-def ask_ai(self, query: str, kb_context: str = "") -> str:
-    # ← PASTE your Groq / LangChain / custom LLM call here
-    # kb_context is auto-injected from RAG when KB has docs
-    ...
+## PORTS
+
+| App | URL |
+|-----|-----|
+| Friday Live | http://localhost:8501 |
+| Admin | http://localhost:8503 |
+
+## MOBILE ACCESS
+
+Users can access Friday Live on their phones:
+
+```bash
+# Find your local IP
+# Linux/Mac: ifconfig | grep "inet "
+# Windows: ipconfig
+
+# Run Friday Live with network access
+streamlit run friday_live.py --server.address 0.0.0.0
+
+# Users open on phone:
+# http://YOUR_IP:8501
 ```
 
-### 3. Adding New API Routes
-Just add `@app.get("/api/your-endpoint")` anywhere in `main.py`.
+## QUICK START
 
----
+```bash
+# Terminal 1 - Admin
+streamlit run friday_admin.py --server.port 8503
 
-## Features
+# Terminal 2 - User App
+streamlit run friday_live.py
 
-| Feature | Where |
-|---|---|
-| Live webcam feed | Dashboard left column |
-| Object detection label | Overlaid on camera + status card |
-| Chat (text + voice) | Dashboard right column |
-| Voice input | Browser Web Speech API (mic button) |
-| PDF knowledge upload | Admin → Knowledge Base |
-| RAG context injection | Automatic on every chat message |
-| Theme editor | Admin → Theme |
-| System prompt editor | Admin → System Prompt |
-| Status badges | Header (Brain / Cam / KB) |
+# Open browser:
+# Admin: localhost:8503
+# User: localhost:8501
+```
 
----
+## FEATURES CHECKLIST
 
-## Environment Variables
+✅ API key hidden from users  
+✅ Model selection (admin only)  
+✅ Theme customization (7 themes)  
+✅ Wallpaper selection  
+✅ Blur control  
+✅ RAG knowledge base  
+✅ PDF/TXT upload  
+✅ Voice selection (8 voices)  
+✅ System prompt control  
+✅ Mobile-friendly  
+✅ No user settings panel  
 
-| Key | Required | Description |
-|---|---|---|
-| `GROQ_API_KEY` | ✅ | Your Groq API key |
-| `GROQ_MODEL` | optional | Default: `llama-3.3-70b-versatile` |
-| `CAMERA_INDEX` | optional | Default: `0` (first webcam) |
+## DONE
