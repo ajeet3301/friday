@@ -1,19 +1,52 @@
 """
-FRIDAY LIVE  v7.0
-Pure voice interaction — full screen, Gemini Live style.
-This serves a single HTML file that does everything in the browser.
-Run: streamlit run main.py
+FRIDAY LIVE v8.0 - User App
+Pure voice interaction controlled by admin panel
+Run: streamlit run friday_live.py
+Admin: streamlit run friday_admin.py --server.port 8503
 """
 
 import os
 import streamlit as st
+import json
 from dotenv import load_dotenv
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+# Load configs from admin panel
+def load_config(file, default):
+    if os.path.exists(file):
+        with open(file, 'r') as f:
+            return json.load(f)
+    return default
 
-st.set_page_config(page_title="Friday Live", page_icon="✦", layout="wide",
-                   initial_sidebar_state="collapsed")
+CONFIG = load_config("friday_config.json", {
+    "groq_api_key": os.getenv("GROQ_API_KEY", ""),
+    "chat_model": "llama-3.3-70b-versatile",
+    "vision_model": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "whisper_model": "whisper-large-v3-turbo",
+    "tts_voice": "en-IN-NeerjaNeural",
+    "system_prompt": "You are Friday, a real-time AI voice assistant like JARVIS.",
+    "enable_rag": True,
+    "max_tokens": 180,
+    "temperature": 0.75
+})
+
+THEME = load_config("friday_theme.json", {
+    "primary_color": "#8ab4f8",
+    "secondary_color": "#81c995",
+    "red_color": "#f28b82",
+    "background_image": "none",
+    "background_blur": "2px",
+    "glass_opacity": "0.08",
+    "glass_blur": "20px",
+    "vignette_intensity": "0.55"
+})
+
+st.set_page_config(
+    page_title="Friday Live",
+    page_icon="✦",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 st.markdown("""
 <style>
@@ -25,29 +58,27 @@ iframe { border:none!important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─── Get API key from user if not set ────────────────────────────────────────
-api_key = st.session_state.get("groq_key", GROQ_API_KEY)
-
-if not api_key:
-    with st.form("key_form"):
-        st.markdown("""
-        <div style='text-align:center;padding:60px 20px;'>
-          <div style='font-size:2.5rem;color:#8ab4f8;margin-bottom:12px;'>✦</div>
-          <div style='font-size:1.4rem;font-weight:300;color:#fff;margin-bottom:8px;'>FRIDAY</div>
-          <div style='font-size:.85rem;color:#666;margin-bottom:24px;'>Enter your Groq API key to start</div>
-        </div>
-        """, unsafe_allow_html=True)
-        k = st.text_input("Groq API Key", placeholder="gsk_…", type="password")
-        if st.form_submit_button("Start Friday →"):
-            st.session_state.groq_key = k
-            st.rerun()
+# Check API key
+if not CONFIG['groq_api_key']:
+    st.error("❌ API Key not configured. Please set it in Admin Panel (port 8503)")
+    st.code("streamlit run friday_admin.py --server.port 8503")
     st.stop()
 
-api_key = st.session_state.get("groq_key", GROQ_API_KEY)
+# Load knowledge base if RAG enabled
+KNOWLEDGE_CONTEXT = ""
+if CONFIG['enable_rag'] and os.path.exists("friday_knowledge/"):
+    files = [f for f in os.listdir("friday_knowledge/") if f.endswith(('.txt', '.md'))]
+    for file in files[:5]:  # Max 5 files
+        with open(os.path.join("friday_knowledge/", file), 'r', encoding='utf-8') as f:
+            content = f.read()[:2000]  # First 2000 chars per file
+            KNOWLEDGE_CONTEXT += f"\n\n[Knowledge from {file}]:\n{content}"
 
-# ─── THE ENTIRE APP IS ONE HTML FILE ─────────────────────────────────────────
-# All AI calls go directly from browser JS → Groq API (no Python in the loop)
-# This gives true real-time interaction
+# Generate background style
+bg_style = ""
+if THEME['background_image'] == "blur":
+    bg_style = ""  # Use camera feed
+elif THEME['background_image'] != "none":
+    bg_style = f"background-image: url('{THEME['background_image']}'); background-size: cover; background-position: center;"
 
 HTML = f"""<!DOCTYPE html>
 <html lang="en">
@@ -59,28 +90,26 @@ HTML = f"""<!DOCTYPE html>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@200;300;400;500&display=swap');
 
 :root {{
-  --ac:  #8ab4f8;
-  --ac2: #81c995;
-  --red: #f28b82;
+  --ac:  {THEME['primary_color']};
+  --ac2: {THEME['secondary_color']};
+  --red: {THEME['red_color']};
 }}
 
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 html,body {{ width:100vw; height:100vh; overflow:hidden; background:#000;
   font-family:'DM Sans',sans-serif; color:#fff; user-select:none; }}
 
-/* ── VIDEO BG ── */
+/* ── VIDEO/BG ── */
 #vid {{
-  position:fixed; inset:0;
-  width:100%; height:100%;
-  object-fit:cover;
+  position:fixed; inset:0; width:100%; height:100%; object-fit:cover;
   transition: filter .5s;
+  {bg_style}
 }}
-#vid.blur {{ filter: brightness(.35) blur(2px); }}
+#vid.blur {{ filter: brightness(.35) blur({THEME['background_blur']}); }}
 
-/* ── VIGNETTE ── */
 .vignette {{
   position:fixed; inset:0; z-index:1; pointer-events:none;
-  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,.55) 100%);
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,{THEME['vignette_intensity']}) 100%);
 }}
 #grad-top {{
   position:fixed; top:0; left:0; right:0; height:160px; z-index:1;
@@ -126,19 +155,6 @@ html,body {{ width:100vw; height:100vh; overflow:hidden; background:#000;
   animation:led 2s infinite;
 }}
 @keyframes led {{ 0%,100%{{opacity:1}} 50%{{opacity:.2}} }}
-
-/* ── SETTINGS BTN ── */
-#gear-btn {{
-  position:fixed; top:16px; right:16px; z-index:10;
-  width:36px; height:36px; border-radius:50%;
-  background:rgba(0,0,0,.4); border:1px solid rgba(255,255,255,.1);
-  color:rgba(255,255,255,.5); font-size:.9rem; cursor:pointer;
-  display:flex; align-items:center; justify-content:center;
-  backdrop-filter:blur(12px);
-  opacity:0; transition:opacity .5s .3s;
-}}
-#gear-btn.on {{ opacity:1; }}
-#gear-btn:hover {{ background:rgba(255,255,255,.12); color:#fff; }}
 
 /* ── REPLY TEXT CENTER ── */
 #reply-area {{
@@ -194,21 +210,15 @@ html,body {{ width:100vw; height:100vh; overflow:hidden; background:#000;
 
 #mic-btn {{
   width:80px; height:80px; border-radius:50%;
-  background:rgba(255,255,255,.08);
+  background:rgba(255,255,255,{THEME['glass_opacity']});
   border:1.5px solid rgba(255,255,255,.2);
   color:#fff; font-size:1.65rem; cursor:pointer;
   display:flex; align-items:center; justify-content:center;
-  backdrop-filter:blur(20px);
+  backdrop-filter:blur({THEME['glass_blur']});
   transition:all .2s;
   box-shadow:0 8px 32px rgba(0,0,0,.5);
   -webkit-tap-highlight-color:transparent;
   position:relative;
-}}
-#mic-btn::before {{
-  content:'';
-  position:absolute; inset:-4px; border-radius:50%;
-  border:1px solid transparent;
-  transition:all .3s;
 }}
 #mic-btn:hover {{
   background:rgba(255,255,255,.14);
@@ -296,70 +306,6 @@ html,body {{ width:100vw; height:100vh; overflow:hidden; background:#000;
 }}
 #start-btn:hover {{ opacity:.88; transform:scale(1.02); }}
 
-/* ── SETTINGS PANEL ── */
-#settings {{
-  position:fixed; top:0; right:0; bottom:0; width:300px;
-  background:rgba(8,8,8,.96); border-left:1px solid rgba(255,255,255,.06);
-  z-index:200; overflow-y:auto;
-  transform:translateX(100%);
-  transition:transform .3s cubic-bezier(.4,0,.2,1);
-  padding:20px;
-  backdrop-filter:blur(20px);
-}}
-#settings.open {{ transform:translateX(0); }}
-.s-overlay {{
-  position:fixed; inset:0; background:rgba(0,0,0,.4);
-  z-index:199; display:none;
-}}
-.s-overlay.show {{ display:block; }}
-.s-head {{
-  font-size:.95rem; font-weight:500; margin-bottom:16px;
-  display:flex; align-items:center; justify-content:space-between;
-  color:#fff;
-}}
-.s-close {{
-  width:28px; height:28px; border-radius:50%;
-  background:rgba(255,255,255,.06); border:none; color:#888;
-  cursor:pointer; font-size:.9rem;
-  display:flex; align-items:center; justify-content:center;
-}}
-.s-close:hover {{ color:#fff; }}
-.s-section {{
-  font-size:.65rem; color:#555; letter-spacing:.1em;
-  text-transform:uppercase; margin:14px 0 7px;
-}}
-.s-input {{
-  width:100%; background:rgba(255,255,255,.05);
-  border:1px solid rgba(255,255,255,.08); border-radius:8px;
-  padding:9px 12px; color:#fff; font-size:.82rem;
-  font-family:'DM Sans',sans-serif; outline:none;
-}}
-.s-input:focus {{ border-color:rgba(138,180,248,.4); }}
-select.s-input option {{ background:#111; }}
-.s-btn {{
-  width:100%; padding:9px; border-radius:10px;
-  background:var(--ac); color:#000; border:none;
-  font-weight:600; font-size:.82rem; cursor:pointer;
-  font-family:'DM Sans',sans-serif; transition:.15s; margin-top:8px;
-}}
-.s-btn:hover {{ opacity:.88; }}
-.s-btn.ghost {{
-  background:rgba(255,255,255,.05); color:#888;
-  border:1px solid rgba(255,255,255,.08);
-}}
-.s-btn.ghost:hover {{ background:rgba(255,255,255,.1); color:#fff; }}
-.s-label {{ font-size:.78rem; color:#888; margin-bottom:5px; display:block; }}
-.s-note {{ font-size:.68rem; color:#444; margin-top:4px; }}
-.s-divider {{ border:none; border-top:1px solid rgba(255,255,255,.05); margin:12px 0; }}
-.theme-row {{ display:grid; grid-template-columns:repeat(5,1fr); gap:6px; margin-top:4px; }}
-.theme-swatch {{
-  aspect-ratio:1; border-radius:8px; cursor:pointer;
-  border:2px solid transparent; transition:.15s;
-  display:flex; align-items:center; justify-content:center;
-}}
-.theme-swatch:hover {{ transform:scale(1.08); }}
-.theme-swatch.active {{ border-color:var(--ac); }}
-
 /* ── TOAST ── */
 #toast {{
   position:fixed; bottom:140px; left:50%; transform:translateX(-50%);
@@ -421,13 +367,10 @@ select.s-input option {{ background:#111; }}
   <div id="live-pill"><div id="live-led"></div>LIVE</div>
 </div>
 
-<!-- ══ SETTINGS GEAR ══ -->
-<button id="gear-btn" onclick="openSettings()">⚙</button>
-
 <!-- ══ FRIDAY'S REPLY ══ -->
 <div id="reply-area">
   <div id="reply-text"></div>
-  <div id="waveform" id="wave">
+  <div id="waveform">
     <div class="wb"></div><div class="wb"></div><div class="wb"></div>
     <div class="wb"></div><div class="wb"></div><div class="wb"></div>
     <div class="wb"></div>
@@ -443,7 +386,7 @@ select.s-input option {{ background:#111; }}
 <!-- ══ SIDE BUTTONS ══ -->
 <div id="cam-btns">
   <button class="side-btn" onclick="snapAndAnalyse()" title="Capture & analyse">📸</button>
-  <button class="side-btn" onclick="flipCam()"         title="Flip camera">🔄</button>
+  <button class="side-btn" onclick="flipCam()" title="Flip camera">🔄</button>
 </div>
 
 <!-- ══ STATUS CHIPS ══ -->
@@ -456,75 +399,23 @@ select.s-input option {{ background:#111; }}
 <!-- ══ TOAST ══ -->
 <div id="toast"></div>
 
-<!-- ══ SETTINGS OVERLAY + PANEL ══ -->
-<div class="s-overlay" id="s-overlay" onclick="closeSettings()"></div>
-<div id="settings">
-  <div class="s-head">
-    <span>Settings</span>
-    <button class="s-close" onclick="closeSettings()">✕</button>
-  </div>
-
-  <div class="s-section">Groq API Key</div>
-  <input class="s-input" id="s-key" type="password" placeholder="gsk_…" value="{api_key}">
-  <div class="s-note">console.groq.com — free key</div>
-
-  <hr class="s-divider">
-
-  <div class="s-section">Chat Model</div>
-  <select class="s-input" id="s-model">
-    <option value="llama-3.3-70b-versatile">Llama 3.3 70B (best)</option>
-    <option value="llama-3.1-8b-instant">Llama 3.1 8B (fast)</option>
-    <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-  </select>
-
-  <div class="s-section">Vision Model</div>
-  <select class="s-input" id="s-vision">
-    <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout (best)</option>
-    <option value="llama-3.2-11b-vision-preview">Llama 3.2 11B Vision</option>
-  </select>
-
-  <hr class="s-divider">
-
-  <div class="s-section">Friday's Voice</div>
-  <select class="s-input" id="s-voice">
-    <option value="en-IN-NeerjaNeural">Indian English — Neerja</option>
-    <option value="en-US-JennyNeural">US English — Jenny</option>
-    <option value="en-GB-SoniaNeural">UK English — Sonia</option>
-    <option value="en-US-GuyNeural">US Male — Guy</option>
-    <option value="hi-IN-SwaraNeural">Hindi — Swara</option>
-  </select>
-
-  <hr class="s-divider">
-
-  <div class="s-section">Friday's Personality</div>
-  <textarea class="s-input" id="s-prompt" rows="5" style="resize:vertical;">You are Friday, a real-time AI voice assistant like JARVIS.
-You can see through the camera.
-Always speak in 1-3 short natural sentences.
-Never use lists or bullets — just talk naturally.
-Say Boss occasionally. Be sharp, helpful, and concise.</textarea>
-
-  <hr class="s-divider">
-
-  <button class="s-btn" onclick="saveSettings()">Save Settings</button>
-  <button class="s-btn ghost" style="margin-top:6px;" onclick="clearHistory()">Clear Conversation</button>
-
-  <div style="font-size:.58rem;color:#333;text-align:center;margin-top:14px;">Friday Live v7.0</div>
-</div>
-
 <script>
 // ══════════════════════════════════════
-// STATE
+// CONFIG FROM ADMIN PANEL
 // ══════════════════════════════════════
+const CONFIG = {{
+  apiKey:       "{CONFIG['groq_api_key']}",
+  chatModel:    "{CONFIG['chat_model']}",
+  visionModel:  "{CONFIG['vision_model']}",
+  voice:        "{CONFIG['tts_voice']}",
+  prompt:       `{CONFIG['system_prompt']}`,
+  maxTokens:    {CONFIG['max_tokens']},
+  temperature:  {CONFIG['temperature']},
+  enableRAG:    {str(CONFIG['enable_rag']).lower()},
+  knowledge:    `{KNOWLEDGE_CONTEXT.replace('`', '').replace(chr(10), ' ')[:2000]}`
+}};
+
 const STATE = {{
-  apiKey:       "{api_key}",
-  chatModel:    "llama-3.3-70b-versatile",
-  visionModel:  "meta-llama/llama-4-scout-17b-16e-instruct",
-  voice:        "en-IN-NeerjaNeural",
-  prompt:       `You are Friday, a real-time AI voice assistant like JARVIS.
-You can see through the camera.
-Always speak in 1-3 short natural sentences.
-Never use lists or bullets — just talk naturally.
-Say Boss occasionally. Be sharp, helpful, and concise.`,
   history:      [],
   camAnalysis:  "",
   recognizing:  false,
@@ -549,7 +440,6 @@ async function launch() {{
     setTimeout(() => {{
       ["c0","c1","c2","c3"].forEach(id => document.getElementById(id).classList.add("on"));
       document.getElementById("logo").classList.add("on");
-      document.getElementById("gear-btn").classList.add("on");
       document.getElementById("mic-ring").classList.add("on");
       document.getElementById("mic-label").classList.add("on");
       document.getElementById("cam-btns").classList.add("on");
@@ -559,7 +449,6 @@ async function launch() {{
     document.getElementById("chip-cam").textContent = "CAM ON";
     STATE.launched = true;
 
-    // Welcome
     setTimeout(() => {{
       fridaySpeak("Friday online. Camera active. Talk to me, Boss.");
     }}, 800);
@@ -569,9 +458,6 @@ async function launch() {{
   }}
 }}
 
-// ══════════════════════════════════════
-// FLIP CAMERA
-// ══════════════════════════════════════
 async function flipCam() {{
   STATE.facing = STATE.facing === "environment" ? "user" : "environment";
   if (STATE.stream) STATE.stream.getTracks().forEach(t => t.stop());
@@ -590,7 +476,7 @@ let recog = null;
 
 function toggleMic() {{
   if (!STATE.launched) return;
-  if (STATE.speaking)  return;  // don't interrupt Friday speaking
+  if (STATE.speaking) return;
   if (STATE.recognizing) {{ recog && recog.stop(); return; }}
 
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -603,7 +489,6 @@ function toggleMic() {{
   recog.lang = "en-US";
   recog.continuous = false;
   recog.interimResults = false;
-  recog.maxAlternatives = 1;
 
   recog.onstart = () => {{
     STATE.recognizing = true;
@@ -624,8 +509,6 @@ function toggleMic() {{
     STATE.recognizing = false;
     setMicState("idle");
     updateChip("chip-voice", "TAP TO TALK");
-    if (e.error !== "no-speech" && e.error !== "aborted")
-      toast("Mic error: " + e.error);
   }};
 
   recog.onend = () => {{
@@ -640,7 +523,7 @@ function toggleMic() {{
 }}
 
 // ══════════════════════════════════════
-// SNAP + ASK FRIDAY WHAT IT SEES
+// SNAP + VISION
 // ══════════════════════════════════════
 function snapAndAnalyse() {{
   if (!STATE.stream) {{ toast("Start camera first"); return; }}
@@ -650,7 +533,6 @@ function snapAndAnalyse() {{
   c.height  = vid.videoHeight || 480;
   c.getContext("2d").drawImage(vid, 0, 0);
 
-  // Flash
   const fl = document.getElementById("flash");
   fl.style.opacity = ".65";
   setTimeout(() => fl.style.opacity = "0", 110);
@@ -662,16 +544,14 @@ function snapAndAnalyse() {{
 }}
 
 // ══════════════════════════════════════
-// GROQ CHAT API  (direct from browser)
+// GROQ CHAT
 // ══════════════════════════════════════
 async function callGroq(userText) {{
-  const key = STATE.apiKey;
-  if (!key) {{ fridaySpeak("Please add your Groq API key in settings."); return; }}
-
-  const sys = STATE.prompt +
+  const sys = CONFIG.prompt +
     "\\nCurrent time: " + new Date().toLocaleTimeString("en-US",{{hour:"2-digit",minute:"2-digit"}}) +
     ", " + new Date().toLocaleDateString("en-US",{{weekday:"long",day:"numeric",month:"long",year:"numeric"}}) +
-    (STATE.camAnalysis ? "\\n\\n[Camera just saw: " + STATE.camAnalysis.slice(0,200) + "]" : "");
+    (STATE.camAnalysis ? "\\n\\n[Camera: " + STATE.camAnalysis.slice(0,200) + "]" : "") +
+    (CONFIG.enableRAG && CONFIG.knowledge ? "\\n\\n[Knowledge: " + CONFIG.knowledge.slice(0,500) + "]" : "");
 
   const messages = [
     {{ role:"system", content: sys }},
@@ -684,13 +564,13 @@ async function callGroq(userText) {{
       method: "POST",
       headers: {{
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + key
+        "Authorization": "Bearer " + CONFIG.apiKey
       }},
       body: JSON.stringify({{
-        model:       STATE.chatModel,
+        model:       CONFIG.chatModel,
         messages:    messages,
-        max_tokens:  180,
-        temperature: 0.75
+        max_tokens:  CONFIG.maxTokens,
+        temperature: CONFIG.temperature
       }})
     }});
 
@@ -715,12 +595,9 @@ async function callGroq(userText) {{
 }}
 
 // ══════════════════════════════════════
-// GROQ VISION API  (direct from browser)
+// GROQ VISION
 // ══════════════════════════════════════
 async function callGroqVision(b64) {{
-  const key = STATE.apiKey;
-  if (!key) {{ fridaySpeak("Please add your Groq API key in settings."); return; }}
-
   const visionPrompt = "Look at this image. In 2-3 sentences: what do you see? Any problems? Quick recommendation? Talk naturally, no lists.";
 
   try {{
@@ -728,10 +605,10 @@ async function callGroqVision(b64) {{
       method: "POST",
       headers: {{
         "Content-Type":"application/json",
-        "Authorization":"Bearer " + key
+        "Authorization":"Bearer " + CONFIG.apiKey
       }},
       body: JSON.stringify({{
-        model: STATE.visionModel,
+        model: CONFIG.visionModel,
         messages: [{{
           role: "user",
           content: [
@@ -760,35 +637,24 @@ async function callGroqVision(b64) {{
 }}
 
 // ══════════════════════════════════════
-// TEXT-TO-SPEECH  (Web Speech API)
-// Uses browser's built-in TTS — no edge-tts needed
+// TTS — Web Speech API
 // ══════════════════════════════════════
 function fridaySpeak(text) {{
-  // Show text
   showReply(text);
   setMicState("speaking");
   updateChip("chip-voice", "SPEAKING…");
   document.getElementById("waveform").classList.add("on");
 
-  // Cancel any ongoing speech
   speechSynthesis.cancel();
 
-  const utt  = new SpeechSynthesisUtterance(text);
-  utt.rate   = 1.05;
-  utt.pitch  = 0.95;
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.rate = 1.05;
+  utt.pitch = 0.95;
   utt.volume = 1;
-  utt.lang   = "en-IN";
+  utt.lang = "en-IN";
 
-  // Try to find a good voice
   const voices = speechSynthesis.getVoices();
-  const pick = voices.find(v =>
-    v.name.includes("Google") ||
-    v.name.includes("Neerja")  ||
-    v.name.includes("Samantha") ||
-    v.name.includes("Karen")
-  ) || voices.find(v => v.lang === "en-IN")
-    || voices.find(v => v.lang.startsWith("en"))
-    || voices[0];
+  const pick = voices.find(v => v.name.includes("Google") || v.name.includes("Neerja")) || voices[0];
   if (pick) utt.voice = pick;
 
   STATE.speaking = true;
@@ -818,10 +684,6 @@ function showReply(text) {{
   document.getElementById("reply-area").classList.add("on");
 }}
 
-function clearReply() {{
-  document.getElementById("reply-area").classList.remove("on");
-}}
-
 function setMicState(state) {{
   const btn = document.getElementById("mic-btn");
   btn.classList.remove("listening","thinking","speaking");
@@ -842,37 +704,7 @@ function toast(msg, duration=2500) {{
   setTimeout(() => el.classList.remove("show"), duration);
 }}
 
-// ══════════════════════════════════════
-// SETTINGS PANEL
-// ══════════════════════════════════════
-function openSettings() {{
-  document.getElementById("settings").classList.add("open");
-  document.getElementById("s-overlay").classList.add("show");
-}}
-function closeSettings() {{
-  document.getElementById("settings").classList.remove("open");
-  document.getElementById("s-overlay").classList.remove("show");
-}}
-function saveSettings() {{
-  STATE.apiKey     = document.getElementById("s-key").value.trim();
-  STATE.chatModel  = document.getElementById("s-model").value;
-  STATE.visionModel= document.getElementById("s-vision").value;
-  STATE.voice      = document.getElementById("s-voice").value;
-  STATE.prompt     = document.getElementById("s-prompt").value;
-  closeSettings();
-  toast("Settings saved ✓");
-}}
-function clearHistory() {{
-  STATE.history = [];
-  STATE.camAnalysis = "";
-  clearReply();
-  toast("Conversation cleared");
-  closeSettings();
-}}
-
-// ══════════════════════════════════════
-// KEYBOARD SHORTCUT — Space bar = mic
-// ══════════════════════════════════════
+// Space bar = mic
 document.addEventListener("keydown", (e) => {{
   if (e.code === "Space" && !e.target.matches("input,textarea,select")) {{
     e.preventDefault();
@@ -880,7 +712,6 @@ document.addEventListener("keydown", (e) => {{
   }}
 }});
 
-// Load voices (async in some browsers)
 speechSynthesis.onvoiceschanged = () => {{ speechSynthesis.getVoices(); }};
 </script>
 </body>
