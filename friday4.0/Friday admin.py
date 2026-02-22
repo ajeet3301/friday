@@ -9,7 +9,10 @@ import json
 import os
 from datetime import datetime
 import hashlib
-load_dotenv() 
+import os
+from dotenv import load_dotenv   # ← YOU ARE MISSING THIS
+
+load_dotenv()
 # ADMIN CREDENTIALS
 ADMIN_USER = os.getenv("ADMIN_USER")
 ADMIN_PASS = os.getenv("ADMIN_PASS")
