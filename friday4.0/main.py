@@ -1,6 +1,5 @@
 """
 FRIDAY LIVE - Streamlit Cloud
-Serves the Friday app as a direct page (not iframe) to allow camera + mic
 """
 import os
 import streamlit as st
@@ -25,7 +24,7 @@ iframe { width:100vw !important; height:100vh !important; border:none !important
 """, unsafe_allow_html=True)
 
 if not GROQ_KEY:
-    st.markdown(f"""
+    st.markdown("""
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
                 min-height:100vh;background:#000;color:#fff;gap:16px;font-family:sans-serif;
                 text-align:center;padding:20px;">
@@ -38,19 +37,15 @@ if not GROQ_KEY:
         </code><br>
         Settings → Secrets → paste above → Save → Reboot app
       </div>
-      <a href="https://console.groq.com" target="_blank"
-         style="color:#8ab4f8;font-size:.85rem;">Get free key → console.groq.com</a>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
-# Inject API key into the HTML and serve it
-# Read the template
-with open("static/friday.html", "r") as f:
+# Fix: use path relative to THIS file, not working directory
+HERE = os.path.dirname(os.path.abspath(__file__))
+with open(os.path.join(HERE, "static", "friday.html"), "r") as f:
     html = f.read()
 
-# Replace the placeholder with the real key
 html = html.replace("__GROQ_KEY__", GROQ_KEY)
 
-# Serve via components - with allow attribute for camera+mic
 st.components.v1.html(html, height=900, scrolling=False)
