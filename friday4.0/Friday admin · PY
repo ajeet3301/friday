@@ -1,600 +1,442 @@
 """
-FRIDAY ADMIN PANEL  v9.0
-Full control: API keys, models, theme, knowledge base, voice, prompts
+FRIDAY LIVE ADMIN PANEL
+Control API keys, models, theme, knowledge base, and voice settings
 Run: streamlit run friday_admin.py --server.port 8503
-Access: http://localhost:8503
-Default login: admin / friday2024
 """
 
 import streamlit as st
-import json, os, hashlib
+import json
+import os
 from datetime import datetime
-from pathlib import Path
+import hashlib
 
-# ══════════════════════════════════════
-# ADMIN AUTH — CHANGE THESE
-# ══════════════════════════════════════
+# ADMIN CREDENTIALS
 ADMIN_USER = "admin"
-ADMIN_PASS = "friday2024"   # ← change this password
+ADMIN_PASS = "friday123"  # Change this!
 
-# ══════════════════════════════════════
-# FILE PATHS
-# ══════════════════════════════════════
-CONFIG_FILE = "friday_config.json"
-THEME_FILE  = "friday_theme.json"
-KB_DIR      = Path("friday_knowledge")
+# CONFIG FILES
+FRIDAY_CONFIG = "friday_config.json"
+THEME_CONFIG = "friday_theme.json"
+KNOWLEDGE_BASE = "friday_knowledge/"
 
-# ══════════════════════════════════════
 # DEFAULTS
-# ══════════════════════════════════════
 DEFAULT_CONFIG = {
-    "groq_api_key":  "",
-    "chat_model":    "llama-3.3-70b-versatile",
-    "vision_model":  "meta-llama/llama-4-scout-17b-16e-instruct",
-    "tts_voice":     "en-IN-NeerjaNeural",
-    "system_prompt": "You are Friday, a real-time AI voice assistant like JARVIS.\nSpeak in 1-3 short natural sentences.\nNever use lists or bullets — just talk naturally.\nSay Boss occasionally. Be sharp, helpful, and concise.",
-    "enable_rag":    True,
-    "max_tokens":    180,
-    "temperature":   0.75,
+    "groq_api_key": "",
+    "chat_model": "llama-3.3-70b-versatile",
+    "vision_model": "meta-llama/llama-4-scout-17b-16e-instruct",
+    "whisper_model": "whisper-large-v3-turbo",
+    "tts_voice": "en-IN-NeerjaNeural",
+    "system_prompt": """You are Friday, a real-time AI voice assistant like JARVIS.
+You can see through the camera.
+Always speak in 1-3 short natural sentences.
+Never use lists or bullets — just talk naturally.
+Say Boss occasionally. Be sharp, helpful, and concise.""",
+    "enable_rag": True,
+    "max_tokens": 180,
+    "temperature": 0.75
 }
 
 DEFAULT_THEME = {
-    "primary":   "#8ab4f8",
-    "secondary": "#81c995",
-    "orb_start": "#4facfe",
-    "orb_mid":   "#667eea",
-    "orb_end":   "#f093fb",
+    "primary_color": "#8ab4f8",
+    "secondary_color": "#81c995",
+    "red_color": "#f28b82",
+    "background_image": "none",
+    "background_blur": "2px",
+    "glass_opacity": "0.08",
+    "glass_blur": "20px",
+    "vignette_intensity": "0.55"
 }
 
-# ══════════════════════════════════════
-# HELPERS
-# ══════════════════════════════════════
-def load_cfg(file, default):
+def load_config(file, default):
     if os.path.exists(file):
-        with open(file) as f:
-            return {**default, **json.load(f)}
+        with open(file, 'r') as f:
+            return json.load(f)
     return default.copy()
 
-def save_cfg(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f, indent=2)
-    return True
+def save_config(file, config):
+    with open(file, 'w') as f:
+        json.dump(config, f, indent=2)
 
-def hash_pw(pw): return hashlib.sha256(pw.encode()).hexdigest()
+def check_login(username, password):
+    return username == ADMIN_USER and hashlib.sha256(password.encode()).hexdigest() == hashlib.sha256(ADMIN_PASS.encode()).hexdigest()
 
-def check_login(u, p):
-    return u == ADMIN_USER and hash_pw(p) == hash_pw(ADMIN_PASS)
-
-def get_kb_files():
-    KB_DIR.mkdir(exist_ok=True)
+def get_knowledge_files():
+    if not os.path.exists(KNOWLEDGE_BASE):
+        os.makedirs(KNOWLEDGE_BASE)
     files = []
-    for f in KB_DIR.iterdir():
-        if f.suffix in (".pdf", ".txt", ".md"):
+    for f in os.listdir(KNOWLEDGE_BASE):
+        if f.endswith(('.pdf', '.txt', '.md')):
+            path = os.path.join(KNOWLEDGE_BASE, f)
+            size = os.path.getsize(path)
             files.append({
-                "name":     f.name,
-                "size":     f"{f.stat().st_size/1024:.1f} KB",
-                "modified": datetime.fromtimestamp(f.stat().st_mtime).strftime("%d %b %Y %H:%M"),
-                "path":     str(f),
-                "type":     f.suffix.upper().replace(".",""),
+                'name': f,
+                'size': f"{size/1024:.1f} KB",
+                'path': path,
+                'modified': datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M")
             })
-    return sorted(files, key=lambda x: x["modified"], reverse=True)
+    return sorted(files, key=lambda x: x['modified'], reverse=True)
 
-# ══════════════════════════════════════
-# PAGE
-# ══════════════════════════════════════
-st.set_page_config(
-    page_title="Friday Admin",
-    page_icon="⚙️",
-    layout="wide",
-)
-
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono&display=swap');
-
-html,body,[class*="css"] {
-    font-family: 'DM Sans', sans-serif !important;
-    background: #080a10 !important;
-    color: #e2e8f0 !important;
-}
-.stApp { background: #080a10 !important; }
-.block-container {
-    background: transparent !important;
-    padding: 2rem 2rem 1rem !important;
-    max-width: 1100px !important;
-}
-#MainMenu, footer, header { visibility: hidden; }
-
-/* Tabs */
-.stTabs [data-baseweb="tab-list"] {
-    background: #0d1117 !important;
-    border-radius: 12px !important;
-    padding: 4px !important;
-    gap: 2px !important;
-    border: 1px solid rgba(255,255,255,.06) !important;
-}
-.stTabs [data-baseweb="tab"] {
-    background: transparent !important;
-    border-radius: 8px !important;
-    color: #666 !important;
-    font-weight: 400 !important;
-    padding: 8px 18px !important;
-}
-.stTabs [aria-selected="true"] {
-    background: rgba(138,180,248,.12) !important;
-    color: #8ab4f8 !important;
-    font-weight: 500 !important;
-}
-.stTabs [data-baseweb="tab-panel"] {
-    padding-top: 20px !important;
-}
-
-/* Inputs */
-.stTextInput>div>div>input,
-.stTextArea>div>div>textarea {
-    background: #0d1117 !important;
-    border: 1px solid rgba(255,255,255,.08) !important;
-    border-radius: 10px !important;
-    color: #e2e8f0 !important;
-    font-family: 'DM Sans',sans-serif !important;
-}
-.stTextInput>div>div>input:focus,
-.stTextArea>div>div>textarea:focus {
-    border-color: rgba(138,180,248,.4) !important;
-    box-shadow: 0 0 0 2px rgba(138,180,248,.08) !important;
-}
-.stSelectbox>div>div {
-    background: #0d1117 !important;
-    border: 1px solid rgba(255,255,255,.08) !important;
-    border-radius: 10px !important;
-    color: #e2e8f0 !important;
-}
-.stNumberInput>div>div>input {
-    background: #0d1117 !important;
-    border: 1px solid rgba(255,255,255,.08) !important;
-    border-radius: 10px !important;
-    color: #e2e8f0 !important;
-}
-
-/* Buttons */
-.stButton>button {
-    background: rgba(138,180,248,.1) !important;
-    border: 1px solid rgba(138,180,248,.25) !important;
-    border-radius: 10px !important;
-    color: #8ab4f8 !important;
-    font-weight: 500 !important;
-    transition: .15s !important;
-}
-.stButton>button:hover {
-    background: rgba(138,180,248,.2) !important;
-    border-color: rgba(138,180,248,.4) !important;
-}
-button[kind="primary"] {
-    background: #8ab4f8 !important;
-    color: #000 !important;
-    border: none !important;
-}
-
-/* Labels */
-label, .stCheckbox span, .stToggle span { color: #94a3b8 !important; }
-h1, h2, h3 { color: #e2e8f0 !important; }
-.stAlert { border-radius: 10px !important; }
-.stDivider { border-color: rgba(255,255,255,.05) !important; }
-.stFileUploader>div {
-    background: #0d1117 !important;
-    border: 2px dashed rgba(138,180,248,.2) !important;
-    border-radius: 12px !important;
-}
-div[data-testid="stToggle"] { background: transparent !important; }
-</style>
-""", unsafe_allow_html=True)
-
-# ══════════════════════════════════════
-# SESSION
-# ══════════════════════════════════════
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-if "config" not in st.session_state:
-    st.session_state.config = load_cfg(CONFIG_FILE, DEFAULT_CONFIG)
-
-if "theme" not in st.session_state:
-    st.session_state.theme = load_cfg(THEME_FILE, DEFAULT_THEME)
-
-# ══════════════════════════════════════
-# LOGIN SCREEN
-# ══════════════════════════════════════
-if not st.session_state.logged_in:
+def main():
+    st.set_page_config(
+        page_title="Friday Live Admin",
+        page_icon="⚙️",
+        layout="wide"
+    )
+    
+    # Dark theme CSS
     st.markdown("""
-    <div style="display:flex;flex-direction:column;align-items:center;
-                padding:60px 0 30px;gap:6px;">
-      <div style="font-size:2.5rem;color:#8ab4f8;">⚙</div>
-      <div style="font-size:1.5rem;font-weight:300;letter-spacing:.08em;color:#e2e8f0;">FRIDAY ADMIN</div>
-      <div style="font-size:.82rem;color:#555;">Control panel</div>
-    </div>
+    <style>
+    .stApp {background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);}
+    .block-container {background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); 
+                      border-radius: 20px; padding: 2rem !important;}
+    h1, h2, h3 {color: #8ab4f8 !important; text-shadow: 0 0 20px rgba(138,180,248,0.5);}
+    .stButton>button {background: rgba(138,180,248,0.15) !important; 
+                      border: 1px solid rgba(138,180,248,0.3) !important; 
+                      color: #8ab4f8 !important; border-radius: 12px !important;}
+    .stTextInput>div>div>input, .stTextArea>div>div>textarea, select {
+        background: rgba(255,255,255,0.05) !important; 
+        border: 1px solid rgba(255,255,255,0.1) !important; 
+        border-radius: 12px !important; color: #fff !important;}
+    </style>
     """, unsafe_allow_html=True)
-
-    _, col, _ = st.columns([1, 1.2, 1])
-    with col:
-        with st.form("login"):
-            u = st.text_input("Username")
-            p = st.text_input("Password", type="password")
-            ok = st.form_submit_button("Login →", use_container_width=True, type="primary")
-            if ok:
-                if check_login(u, p):
+    
+    # Session state
+    if 'logged_in' not in st.session_state:
+        st.session_state.logged_in = False
+    
+    if 'config' not in st.session_state:
+        st.session_state.config = load_config(FRIDAY_CONFIG, DEFAULT_CONFIG)
+    
+    if 'theme' not in st.session_state:
+        st.session_state.theme = load_config(THEME_CONFIG, DEFAULT_THEME)
+    
+    # Login
+    if not st.session_state.logged_in:
+        st.markdown("<h1 style='text-align: center;'>🔐 FRIDAY ADMIN</h1>", unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            
+            if st.button("Login", use_container_width=True, type="primary"):
+                if check_login(username, password):
                     st.session_state.logged_in = True
                     st.rerun()
                 else:
-                    st.error("Wrong credentials")
-        st.caption(f"Default: **{ADMIN_USER}** / **friday2024**  — change in `friday_admin.py`")
-    st.stop()
-
-# ══════════════════════════════════════
-# HEADER
-# ══════════════════════════════════════
-hc1, hc2 = st.columns([6, 1])
-with hc1:
-    st.markdown("""
-    <div style="display:flex;align-items:center;gap:12px;padding:8px 0 20px;">
-      <div style="font-size:1.3rem;color:#8ab4f8;">⚙</div>
-      <div>
-        <div style="font-size:1.2rem;font-weight:500;color:#e2e8f0;">Friday Admin Panel</div>
-        <div style="font-size:.75rem;color:#555;">Full control — API · Models · Theme · Knowledge · Voice</div>
-      </div>
-    </div>""", unsafe_allow_html=True)
-with hc2:
-    if st.button("🚪 Logout", use_container_width=True):
-        st.session_state.logged_in = False
-        st.rerun()
-
-# ══════════════════════════════════════
-# TABS
-# ══════════════════════════════════════
-tabs = st.tabs(["🔑  API & Models", "🎨  Theme", "📚  Knowledge Base", "🔊  Voice & Prompt", "📊  Status"])
-
-# ══════════════════════════════════════
-# TAB 1 — API & MODELS
-# ══════════════════════════════════════
-with tabs[0]:
-    st.markdown("### API Keys & Model Selection")
-    cfg = st.session_state.config.copy()
-
-    # API Key
-    st.markdown("**Groq API Key**")
-    cfg["groq_api_key"] = st.text_input(
-        "k", value=cfg["groq_api_key"], type="password",
-        placeholder="gsk_…", label_visibility="collapsed")
-
-    if cfg["groq_api_key"]:
-        masked = cfg["groq_api_key"][:8] + "…" + cfg["groq_api_key"][-4:]
-        st.success(f"✅ Key configured: `{masked}`")
-    else:
-        st.error("❌ API key missing — Friday won't work without it")
-        st.caption("Get free key at [console.groq.com](https://console.groq.com)")
-
-    st.divider()
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Chat Model**")
-        chat_models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it",
-        ]
-        idx = chat_models.index(cfg["chat_model"]) if cfg["chat_model"] in chat_models else 0
-        cfg["chat_model"] = st.selectbox("cm", chat_models, index=idx,
-                                          label_visibility="collapsed")
-        st.caption("70B = best quality · 8B = fastest")
-
-    with c2:
-        st.markdown("**Vision Model**")
-        vis_models = [
-            "meta-llama/llama-4-scout-17b-16e-instruct",
-            "llama-3.2-11b-vision-preview",
-            "llama-3.2-90b-vision-preview",
-        ]
-        idx2 = vis_models.index(cfg["vision_model"]) if cfg["vision_model"] in vis_models else 0
-        cfg["vision_model"] = st.selectbox("vm", vis_models, index=idx2,
-                                            label_visibility="collapsed")
-        st.caption("Used when 📸 Capture button is pressed")
-
-    st.divider()
-
-    st.markdown("**Advanced Parameters**")
-    p1, p2, p3 = st.columns(3)
-    with p1:
-        cfg["max_tokens"]  = st.number_input("Max tokens", 50, 500, int(cfg["max_tokens"]))
-        st.caption("Shorter = faster responses")
-    with p2:
-        cfg["temperature"] = st.slider("Temperature", 0.0, 1.0, float(cfg["temperature"]), 0.05)
-        st.caption("Higher = more creative")
-    with p3:
-        cfg["enable_rag"]  = st.toggle("Knowledge Base (RAG)", value=cfg["enable_rag"])
-        st.caption("Uses uploaded docs in answers")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("💾  Save API & Model Settings", use_container_width=True, type="primary"):
-        save_cfg(CONFIG_FILE, cfg)
-        st.session_state.config = cfg
-        st.success("✅ Saved! Restart Friday Live to apply.")
-
-# ══════════════════════════════════════
-# TAB 2 — THEME
-# ══════════════════════════════════════
-with tabs[1]:
-    st.markdown("### Visual Theme")
-    theme = st.session_state.theme.copy()
-
-    st.markdown("**Orb Colors**")
-    tc1, tc2, tc3, tc4, tc5 = st.columns(5)
-    with tc1:
-        theme["primary"]   = st.color_picker("Primary", theme["primary"])
-        st.caption("Accent / glow")
-    with tc2:
-        theme["secondary"] = st.color_picker("Secondary", theme["secondary"])
-        st.caption("Live dot / speaking")
-    with tc3:
-        theme["orb_start"] = st.color_picker("Orb Start", theme["orb_start"])
-    with tc4:
-        theme["orb_mid"]   = st.color_picker("Orb Mid",   theme["orb_mid"])
-    with tc5:
-        theme["orb_end"]   = st.color_picker("Orb End",   theme["orb_end"])
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Live preview
-    st.markdown("**Preview**")
-    st.markdown(f"""
-    <div style="background:#000;border-radius:16px;padding:40px;text-align:center;
-                border:1px solid rgba(255,255,255,.06);position:relative;overflow:hidden;">
-      <div style="position:absolute;inset:0;
-        background:radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,.6) 100%);"></div>
-      <div style="width:120px;height:120px;border-radius:50%;margin:0 auto 20px;
-        background:radial-gradient(circle at 32% 28%,{theme['orb_start']},{theme['orb_mid']},#764ba2,{theme['orb_end']});
-        box-shadow:0 0 40px {theme['orb_start']}80;"></div>
-      <div style="font-size:1.2rem;font-weight:300;letter-spacing:.1em;color:#fff;">FRIDAY</div>
-      <div style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;
-        padding:4px 12px;border-radius:14px;background:rgba(0,0,0,.5);
-        border:1px solid rgba(255,255,255,.1);font-size:.65rem;color:{theme['secondary']};">
-        ● LIVE
-      </div>
-      <div style="margin-top:14px;font-size:.85rem;color:rgba(255,255,255,.7);">
-        Online. Say 'Friday' to talk.
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Preset themes
-    st.markdown("**Quick Presets**")
-    preset_cols = st.columns(5)
-    presets = {
-        "Blue (Default)": {"primary":"#8ab4f8","secondary":"#81c995","orb_start":"#4facfe","orb_mid":"#667eea","orb_end":"#f093fb"},
-        "Cyan Neon":      {"primary":"#00d4ff","secondary":"#00ff88","orb_start":"#00d4ff","orb_mid":"#0066ff","orb_end":"#00ff88"},
-        "Purple":         {"primary":"#c084fc","secondary":"#a78bfa","orb_start":"#9333ea","orb_mid":"#7c3aed","orb_end":"#ec4899"},
-        "Gold":           {"primary":"#fbbf24","secondary":"#a3e635","orb_start":"#f59e0b","orb_mid":"#d97706","orb_end":"#ef4444"},
-        "Matrix":         {"primary":"#4ade80","secondary":"#4ade80","orb_start":"#166534","orb_mid":"#15803d","orb_end":"#4ade80"},
-    }
-    for col, (name, p) in zip(preset_cols, presets.items()):
-        with col:
-            st.markdown(f"""
-            <div style="aspect-ratio:1;border-radius:8px;cursor:pointer;
-              background:radial-gradient(circle at 30% 30%,{p['orb_start']},{p['orb_mid']},{p['orb_end']});
-              border:2px solid transparent;margin-bottom:4px;"></div>
-            <div style="font-size:.6rem;color:#666;text-align:center;">{name}</div>""",
-            unsafe_allow_html=True)
-            if st.button("Apply", key=f"pre_{name}", use_container_width=True):
-                theme.update(p)
-                st.session_state.theme = theme
-                save_cfg(THEME_FILE, theme)
-                st.success(f"✅ {name} applied!")
-                st.rerun()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("💾  Save Theme", use_container_width=True, type="primary"):
-        save_cfg(THEME_FILE, theme)
-        st.session_state.theme = theme
-        st.success("✅ Theme saved! Restart Friday Live to see changes.")
-
-# ══════════════════════════════════════
-# TAB 3 — KNOWLEDGE BASE
-# ══════════════════════════════════════
-with tabs[2]:
-    st.markdown("### Knowledge Base (RAG)")
-    st.info("Upload PDF or text files. Friday will reference this when answering questions. Max 5 files used per session.")
-
-    KB_DIR.mkdir(exist_ok=True)
-
-    # Upload
-    uploaded = st.file_uploader(
-        "Upload files (PDF, TXT, MD)",
-        type=["pdf","txt","md"],
-        accept_multiple_files=True,
-        label_visibility="collapsed")
-
-    if uploaded:
-        for f in uploaded:
-            path = KB_DIR / f.name
-            path.write_bytes(f.getbuffer())
-            st.success(f"✅ Uploaded: **{f.name}** ({f.size/1024:.1f} KB)")
-
-    st.divider()
-
-    # File list
-    files = get_kb_files()
-    if files:
-        st.markdown(f"**{len(files)} files in knowledge base**")
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        for file in files:
-            fc1, fc2, fc3, fc4, fc5 = st.columns([3, 1, 1.5, 1, .5])
-            with fc1:
-                badge_color = "#8ab4f8" if file["type"]=="PDF" else "#81c995"
-                st.markdown(
-                    f"<span style='background:{badge_color}20;border:1px solid {badge_color}40;"
-                    f"border-radius:5px;padding:2px 7px;font-size:.65rem;color:{badge_color};margin-right:8px;'>"
-                    f"{file['type']}</span>"
-                    f"<span style='font-size:.85rem;'>{file['name']}</span>",
-                    unsafe_allow_html=True)
-            with fc2:
-                st.caption(file["size"])
-            with fc3:
-                st.caption(file["modified"])
-            with fc4:
-                # Preview text files
-                if file["type"] in ("TXT","MD"):
-                    if st.button("👁 Preview", key=f"prev_{file['name']}"):
-                        with open(file["path"]) as f:
-                            st.code(f.read()[:1000], language="text")
-            with fc5:
-                if st.button("✕", key=f"del_{file['name']}"):
-                    os.remove(file["path"])
-                    st.rerun()
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🗑  Delete All Files", use_container_width=True):
-            for f in files:
-                os.remove(f["path"])
-            st.success("All files deleted")
+                    st.error("Invalid credentials")
+            
+            st.info("Default: admin / friday123")
+        return
+    
+    # Header
+    st.markdown("<h1 style='text-align: center;'>⚙️ FRIDAY LIVE ADMIN</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #8ab4f8;'>Control panel for Friday Live</p>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 6, 1])
+    with col3:
+        if st.button("🚪 Logout"):
+            st.session_state.logged_in = False
             st.rerun()
-    else:
-        st.markdown("""
-        <div style="text-align:center;padding:40px;color:#444;
-                    background:#0d1117;border-radius:12px;
-                    border:1px dashed rgba(255,255,255,.05);">
-          <div style="font-size:2rem;margin-bottom:8px;">📭</div>
-          <div>No knowledge files yet</div>
-          <div style="font-size:.78rem;margin-top:4px;">Upload PDFs or text files above</div>
-        </div>""", unsafe_allow_html=True)
-
-# ══════════════════════════════════════
-# TAB 4 — VOICE & PROMPT
-# ══════════════════════════════════════
-with tabs[3]:
-    st.markdown("### Voice & Friday's Personality")
-    cfg = st.session_state.config.copy()
-
-    st.markdown("**TTS Voice**")
-    voices = {
-        "en-IN-NeerjaNeural":  "🇮🇳 Indian English — Neerja (Female)",
-        "en-IN-PrabhatNeural": "🇮🇳 Indian English — Prabhat (Male)",
-        "en-US-JennyNeural":   "🇺🇸 US English — Jenny (Female)",
-        "en-US-GuyNeural":     "🇺🇸 US English — Guy (Male)",
-        "en-GB-SoniaNeural":   "🇬🇧 UK English — Sonia (Female)",
-        "en-GB-RyanNeural":    "🇬🇧 UK English — Ryan (Male)",
-        "hi-IN-SwaraNeural":   "🇮🇳 Hindi — Swara (Female)",
-        "hi-IN-MadhurNeural":  "🇮🇳 Hindi — Madhur (Male)",
-    }
-    v_keys = list(voices.keys())
-    v_idx  = v_keys.index(cfg["tts_voice"]) if cfg["tts_voice"] in v_keys else 0
-    cfg["tts_voice"] = st.selectbox("voice", v_keys,
-                                     format_func=lambda x: voices[x],
-                                     index=v_idx,
-                                     label_visibility="collapsed")
-    st.caption("Note: Friday Live uses browser TTS — voice selection depends on what Chrome has installed")
-
-    st.divider()
-
-    st.markdown("**System Prompt (Friday's Personality)**")
-    st.caption("This defines how Friday talks and behaves. Keep it brief — it's injected every request.")
-    cfg["system_prompt"] = st.text_area(
-        "sp", value=cfg["system_prompt"], height=200,
-        label_visibility="collapsed",
-        placeholder="You are Friday, an AI assistant...")
-
+    
     st.markdown("<br>", unsafe_allow_html=True)
-
-    # Prompt presets
-    st.markdown("**Prompt Presets**")
-    pr1, pr2, pr3 = st.columns(3)
-    prompts = {
-        "JARVIS (Default)": "You are Friday, a real-time AI voice assistant like JARVIS from Iron Man.\nSpeak in 1-3 short natural sentences.\nNever use lists or bullets — just talk naturally.\nSay Boss occasionally. Be sharp, helpful, and concise.",
-        "Friendly":         "You are Friday, a warm and helpful AI assistant.\nSpeak naturally in 2-3 conversational sentences.\nBe encouraging, friendly, and use simple language.\nOccasionally say 'Boss' in a friendly way.",
-        "Technical":        "You are Friday, a technical AI assistant.\nProvide precise, accurate answers in 2-3 sentences.\nFocus on facts and solutions. Use technical terms when helpful.\nBe direct and concise.",
-    }
-    for col, (name, p) in zip([pr1,pr2,pr3], prompts.items()):
-        with col:
-            if st.button(name, use_container_width=True, key=f"pr_{name}"):
-                cfg["system_prompt"] = p
+    
+    # Tabs
+    tabs = st.tabs(["🔑 API & Models", "🎨 Theme & UI", "📚 Knowledge Base", "🔊 Voice & Prompts"])
+    
+    # TAB 1: API & MODELS
+    with tabs[0]:
+        st.markdown("## 🔑 API Keys & Models")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        config = st.session_state.config.copy()
+        
+        # API Key
+        st.markdown("### Groq API Key")
+        config['groq_api_key'] = st.text_input(
+            "API Key",
+            value=config['groq_api_key'],
+            type="password",
+            help="Get free key at console.groq.com"
+        )
+        
+        if config['groq_api_key']:
+            st.success("✅ API Key configured")
+        else:
+            st.error("❌ API Key missing")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Models
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### Chat Model")
+            models = [
+                "llama-3.3-70b-versatile",
+                "llama-3.1-8b-instant",
+                "mixtral-8x7b-32768",
+                "gemma2-9b-it"
+            ]
+            config['chat_model'] = st.selectbox(
+                "Select model",
+                models,
+                index=models.index(config['chat_model']) if config['chat_model'] in models else 0,
+                label_visibility="collapsed"
+            )
+        
+        with col2:
+            st.markdown("### Vision Model")
+            vision_models = [
+                "meta-llama/llama-4-scout-17b-16e-instruct",
+                "llama-3.2-11b-vision-preview",
+                "llama-3.2-90b-vision-preview"
+            ]
+            config['vision_model'] = st.selectbox(
+                "Select vision model",
+                vision_models,
+                index=vision_models.index(config['vision_model']) if config['vision_model'] in vision_models else 0,
+                label_visibility="collapsed"
+            )
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Parameters
+        st.markdown("### LLM Parameters")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            config['max_tokens'] = st.number_input("Max Tokens", 50, 500, config['max_tokens'])
+        
+        with col2:
+            config['temperature'] = st.slider("Temperature", 0.0, 1.0, config['temperature'], 0.05)
+        
+        with col3:
+            config['enable_rag'] = st.toggle("Enable RAG", value=config['enable_rag'])
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        if st.button("💾 Save API & Model Settings", use_container_width=True, type="primary"):
+            save_config(FRIDAY_CONFIG, config)
+            st.session_state.config = config
+            st.success("✅ Saved! Restart Friday Live to apply changes")
+    
+    # TAB 2: THEME & UI
+    with tabs[1]:
+        st.markdown("## 🎨 Theme & UI Customization")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        theme = st.session_state.theme.copy()
+        
+        # Colors
+        st.markdown("### Colors")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            theme['primary_color'] = st.color_picker("Primary (Blue)", theme['primary_color'])
+        
+        with col2:
+            theme['secondary_color'] = st.color_picker("Secondary (Green)", theme['secondary_color'])
+        
+        with col3:
+            theme['red_color'] = st.color_picker("Red (Recording)", theme['red_color'])
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Background
+        st.markdown("### Background")
+        
+        bg_options = {
+            "none": "Dark Gradient (Default)",
+            "blur": "Camera Feed (Blurred)",
+            "https://images.unsplash.com/photo-1419242902214-272b3f66ee7a?w=1920": "Space Stars",
+            "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?w=1920": "Mountain Peak",
+            "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1920": "Forest Path",
+            "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1920": "Mountain Lake",
+            "https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?w=1920": "City Night",
+        }
+        
+        selected_bg = st.selectbox(
+            "Background Image",
+            list(bg_options.keys()),
+            format_func=lambda x: bg_options[x],
+            index=list(bg_options.keys()).index(theme['background_image']) if theme['background_image'] in bg_options else 0
+        )
+        theme['background_image'] = selected_bg
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            blur_val = int(theme['background_blur'].replace('px', ''))
+            theme['background_blur'] = f"{st.slider('Background Blur (px)', 0, 20, blur_val)}px"
+        
+        with col2:
+            theme['vignette_intensity'] = f"{st.slider('Vignette Intensity', 0.0, 1.0, float(theme['vignette_intensity']))}"
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Glass Effect
+        st.markdown("### Glass Effect")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            opacity = float(theme['glass_opacity'])
+            theme['glass_opacity'] = f"{st.slider('Glass Opacity', 0.0, 0.3, opacity, 0.01)}"
+        
+        with col2:
+            blur = int(theme['glass_blur'].replace('px', ''))
+            theme['glass_blur'] = f"{st.slider('Glass Blur (px)', 0, 40, blur)}px"
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        # Preview
+        st.markdown("### Preview")
+        st.markdown(f"""
+        <div style='background: linear-gradient(135deg, {theme['primary_color']}30 0%, {theme['secondary_color']}30 100%);
+                    padding: 30px; border-radius: 20px; text-align: center;
+                    backdrop-filter: blur({theme['glass_blur']});
+                    border: 1px solid {theme['primary_color']}50;'>
+            <div style='font-size: 2rem; color: {theme['primary_color']};'>✦</div>
+            <div style='font-size: 1.2rem; color: #fff; margin-top: 10px;'>FRIDAY</div>
+            <div style='display: inline-block; padding: 5px 15px; border-radius: 20px; margin-top: 10px;
+                        background: rgba(255,255,255,{theme['glass_opacity']}); 
+                        border: 1px solid {theme['secondary_color']}50;'>
+                <span style='color: {theme['secondary_color']};'>● LIVE</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        if st.button("💾 Save Theme Settings", use_container_width=True, type="primary"):
+            save_config(THEME_CONFIG, theme)
+            st.session_state.theme = theme
+            st.success("✅ Saved! Restart Friday Live to see changes")
+    
+    # TAB 3: KNOWLEDGE BASE
+    with tabs[2]:
+        st.markdown("## 📚 Knowledge Base (RAG)")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        st.markdown("### Upload Knowledge Files")
+        st.info("Upload PDF, TXT, or MD files. Friday will use this knowledge when RAG is enabled.")
+        
+        uploaded_files = st.file_uploader(
+            "Upload files",
+            type=['pdf', 'txt', 'md'],
+            accept_multiple_files=True,
+            label_visibility="collapsed"
+        )
+        
+        if uploaded_files:
+            if not os.path.exists(KNOWLEDGE_BASE):
+                os.makedirs(KNOWLEDGE_BASE)
+            
+            for file in uploaded_files:
+                path = os.path.join(KNOWLEDGE_BASE, file.name)
+                with open(path, 'wb') as f:
+                    f.write(file.getbuffer())
+                st.success(f"✅ Uploaded: {file.name}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Existing files
+        st.markdown("### Existing Knowledge Files")
+        files = get_knowledge_files()
+        
+        if files:
+            st.markdown(f"**{len(files)} files in knowledge base**")
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            for file in files:
+                col1, col2, col3, col4 = st.columns([4, 2, 2, 1])
+                
+                with col1:
+                    st.markdown(f"**📄 {file['name']}**")
+                
+                with col2:
+                    st.text(file['size'])
+                
+                with col3:
+                    st.text(file['modified'])
+                
+                with col4:
+                    if st.button("🗑️", key=f"del_{file['name']}"):
+                        os.remove(file['path'])
+                        st.rerun()
+                
+                st.divider()
+        else:
+            st.info("No files uploaded yet")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if files:
+            if st.button("🗑️ Delete All Files", use_container_width=True):
+                for file in files:
+                    os.remove(file['path'])
+                st.success("✅ All files deleted")
                 st.rerun()
+    
+    # TAB 4: VOICE & PROMPTS
+    with tabs[3]:
+        st.markdown("## 🔊 Voice & System Prompts")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        config = st.session_state.config.copy()
+        
+        # TTS Voice
+        st.markdown("### Friday's Voice")
+        voices = {
+            "en-IN-NeerjaNeural": "🇮🇳 Indian English - Neerja (Female)",
+            "en-IN-PrabhatNeural": "🇮🇳 Indian English - Prabhat (Male)",
+            "en-US-JennyNeural": "🇺🇸 US English - Jenny (Female)",
+            "en-US-GuyNeural": "🇺🇸 US English - Guy (Male)",
+            "en-GB-SoniaNeural": "🇬🇧 UK English - Sonia (Female)",
+            "en-GB-RyanNeural": "🇬🇧 UK English - Ryan (Male)",
+            "hi-IN-SwaraNeural": "🇮🇳 Hindi - Swara (Female)",
+            "hi-IN-MadhurNeural": "🇮🇳 Hindi - Madhur (Male)"
+        }
+        
+        config['tts_voice'] = st.selectbox(
+            "Select TTS Voice",
+            list(voices.keys()),
+            format_func=lambda x: voices[x],
+            index=list(voices.keys()).index(config['tts_voice']) if config['tts_voice'] in voices else 0
+        )
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Whisper Model
+        st.markdown("### Speech Recognition Model")
+        whisper_models = [
+            "whisper-large-v3-turbo",
+            "whisper-large-v3"
+        ]
+        config['whisper_model'] = st.selectbox(
+            "Whisper Model",
+            whisper_models,
+            index=whisper_models.index(config['whisper_model']) if config['whisper_model'] in whisper_models else 0
+        )
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # System Prompt
+        st.markdown("### System Prompt (Friday's Personality)")
+        config['system_prompt'] = st.text_area(
+            "System Prompt",
+            value=config['system_prompt'],
+            height=200,
+            label_visibility="collapsed"
+        )
+        
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        
+        if st.button("💾 Save Voice & Prompt Settings", use_container_width=True, type="primary"):
+            save_config(FRIDAY_CONFIG, config)
+            st.session_state.config = config
+            st.success("✅ Saved! Restart Friday Live to apply changes")
 
-    st.markdown("<br>", unsafe_allow_html=True)
-    if st.button("💾  Save Voice & Prompt", use_container_width=True, type="primary"):
-        save_cfg(CONFIG_FILE, cfg)
-        st.session_state.config = cfg
-        st.success("✅ Saved! Restart Friday Live to apply.")
-
-# ══════════════════════════════════════
-# TAB 5 — STATUS
-# ══════════════════════════════════════
-with tabs[4]:
-    st.markdown("### System Status")
-
-    cfg   = st.session_state.config
-    theme = st.session_state.theme
-    files = get_kb_files()
-
-    # Status cards
-    sc1, sc2, sc3, sc4 = st.columns(4)
-
-    def status_card(col, icon, label, value, color):
-        col.markdown(f"""
-        <div style="background:#0d1117;border:1px solid rgba(255,255,255,.06);
-                    border-radius:12px;padding:18px;text-align:center;">
-          <div style="font-size:1.6rem;margin-bottom:6px;">{icon}</div>
-          <div style="font-size:.7rem;color:#555;letter-spacing:.07em;text-transform:uppercase;margin-bottom:4px;">{label}</div>
-          <div style="font-size:.95rem;font-weight:500;color:{color};">{value}</div>
-        </div>""", unsafe_allow_html=True)
-
-    status_card(sc1, "🔑", "API Key",       "Configured ✓" if cfg["groq_api_key"] else "Missing ✗",
-                "#81c995" if cfg["groq_api_key"] else "#f28b82")
-    status_card(sc2, "🤖", "Chat Model",    cfg["chat_model"].split("-")[0:3][2] if "-" in cfg["chat_model"] else cfg["chat_model"][:12], "#8ab4f8")
-    status_card(sc3, "📚", "Knowledge Files", f"{len(files)} file{'s' if len(files)!=1 else ''}",
-                "#81c995" if files else "#9aa0a6")
-    status_card(sc4, "📖", "RAG Enabled",   "Yes ✓" if cfg["enable_rag"] else "No ✗",
-                "#81c995" if cfg["enable_rag"] else "#9aa0a6")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Config viewer
-    with st.expander("📄 Current Config (friday_config.json)"):
-        safe_cfg = {k: ("***" if "key" in k and v else v) for k,v in cfg.items()}
-        st.json(safe_cfg)
-
-    with st.expander("🎨 Current Theme (friday_theme.json)"):
-        st.json(theme)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    st.markdown("### How to Run")
-    st.markdown("""
-    <div style="background:#0d1117;border:1px solid rgba(255,255,255,.06);
-                border-radius:12px;padding:20px;font-family:'DM Mono',monospace;">
-      <div style="color:#4ade80;margin-bottom:8px;"># Terminal 1 — Friday Live (main app)</div>
-      <div style="color:#e2e8f0;margin-bottom:16px;">streamlit run friday_live.py</div>
-      <div style="color:#8ab4f8;margin-bottom:8px;"># Terminal 2 — Admin Panel</div>
-      <div style="color:#e2e8f0;margin-bottom:16px;">streamlit run friday_admin.py --server.port 8503</div>
-      <div style="color:#666;margin-bottom:4px;"># Access:</div>
-      <div style="color:#e2e8f0;">Friday Live →  http://localhost:8501</div>
-      <div style="color:#e2e8f0;">Admin Panel → http://localhost:8503</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Danger zone
-    with st.expander("🗑 Reset / Danger Zone"):
-        d1, d2 = st.columns(2)
-        with d1:
-            if st.button("Reset Config to Defaults", use_container_width=True):
-                save_cfg(CONFIG_FILE, DEFAULT_CONFIG)
-                st.session_state.config = DEFAULT_CONFIG.copy()
-                st.warning("Config reset to defaults")
-        with d2:
-            if st.button("Reset Theme to Defaults", use_container_width=True):
-                save_cfg(THEME_FILE, DEFAULT_THEME)
-                st.session_state.theme = DEFAULT_THEME.copy()
-                st.warning("Theme reset to defaults")
+if __name__ == "__main__":
+    main()
