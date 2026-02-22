@@ -12,7 +12,7 @@ import hashlib
 
 # ADMIN CREDENTIALS
 ADMIN_USER = "admin"
-ADMIN_PASS = "friday123"  # Change this!
+ADMIN_PASS = "fridayadmin@1"
 
 # CONFIG FILES
 FRIDAY_CONFIG = "friday_config.json"
