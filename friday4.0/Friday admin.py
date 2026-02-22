@@ -9,10 +9,10 @@ import json
 import os
 from datetime import datetime
 import hashlib
-
+load_dotenv() 
 # ADMIN CREDENTIALS
-ADMIN_USER = "admin"
-ADMIN_PASS = "fridayadmin@1"
+ADMIN_USER = os.getenv("ADMIN_USER")
+ADMIN_PASS = os.getenv("ADMIN_PASS")
 
 # CONFIG FILES
 FRIDAY_CONFIG = "friday_config.json"
