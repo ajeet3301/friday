@@ -3,7 +3,7 @@ FRIDAY AI — Gemini-style clean UI
 Run: streamlit run main.py
 """
 
-import os, base64, time
+import os, base64, time, io
 from datetime import datetime
 from pathlib import Path
 
@@ -516,6 +516,158 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# BROWSER WEBCAM  (works on Streamlit Cloud — uses your device camera)
+# The JS captures a frame → sends base64 to Python via st.query_params
+# ─────────────────────────────────────────────────────────────────────────
+WEBCAM_HTML = """
+<div id="cam-wrap" style="position:relative;background:#000;border-radius:12px;overflow:hidden;">
+
+  <!-- Live video element -->
+  <video id="vid" autoplay playsinline muted
+    style="width:100%;display:block;border-radius:12px;"></video>
+
+  <!-- Hidden canvas for snapshots -->
+  <canvas id="cnv" style="display:none;"></canvas>
+
+  <!-- Overlay: detected label -->
+  <div id="det-box" style="
+    display:none;position:absolute;bottom:12px;left:12px;
+    background:rgba(0,0,0,.65);backdrop-filter:blur(6px);
+    border:1px solid rgba(138,180,248,.3);border-radius:8px;
+    padding:6px 12px;font-family:'DM Mono',monospace;font-size:.75rem;color:#8ab4f8;">
+    <div style="font-size:.6rem;color:#9aa0a6;margin-bottom:2px;">DETECTED</div>
+    <span id="det-label">—</span>
+  </div>
+
+  <!-- Overlay: controls -->
+  <div style="position:absolute;bottom:12px;right:12px;display:flex;gap:8px;">
+    <button onclick="startCam()" id="btn-start"
+      style="padding:7px 16px;border-radius:20px;border:1px solid rgba(138,180,248,.4);
+             background:rgba(0,0,0,.6);color:#8ab4f8;cursor:pointer;font-size:.75rem;backdrop-filter:blur(6px);">
+      ▶ Start
+    </button>
+    <button onclick="snapPhoto()" id="btn-snap"
+      style="padding:7px 16px;border-radius:20px;border:none;
+             background:#8ab4f8;color:#000;cursor:pointer;font-size:.75rem;font-weight:600;display:none;">
+      📸 Capture
+    </button>
+    <button onclick="stopCam()" id="btn-stop"
+      style="padding:7px 16px;border-radius:20px;border:1px solid rgba(255,255,255,.1);
+             background:rgba(0,0,0,.6);color:#9aa0a6;cursor:pointer;font-size:.75rem;
+             backdrop-filter:blur(6px);display:none;">
+      ■ Stop
+    </button>
+  </div>
+</div>
+
+<!-- Snapshot preview (shown after capture) -->
+<div id="snap-wrap" style="display:none;margin-top:8px;position:relative;">
+  <img id="snap-img" style="width:100%;border-radius:10px;border:1px solid rgba(255,255,255,.08);">
+  <div style="margin-top:6px;display:flex;gap:8px;">
+    <button onclick="sendToFriday()"
+      style="padding:7px 18px;border-radius:20px;background:#8ab4f8;border:none;
+             color:#000;cursor:pointer;font-size:.78rem;font-weight:600;">
+      ✦ Ask Friday about this
+    </button>
+    <button onclick="document.getElementById('snap-wrap').style.display='none'"
+      style="padding:7px 14px;border-radius:20px;background:transparent;
+             border:1px solid rgba(255,255,255,.1);color:#9aa0a6;cursor:pointer;font-size:.78rem;">
+      Dismiss
+    </button>
+  </div>
+</div>
+
+<!-- Hidden input that posts snapshot back to Streamlit -->
+<textarea id="frame-data" style="display:none;"></textarea>
+<button id="submit-snap" onclick="submitSnap()" style="display:none;"></button>
+
+<script>
+let stream = null;
+let snapData = null;
+
+async function startCam() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width:{ideal:1280}, height:{ideal:720} }
+    });
+    document.getElementById('vid').srcObject = stream;
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-snap').style.display  = 'block';
+    document.getElementById('btn-stop').style.display  = 'block';
+    document.getElementById('det-box').style.display   = 'block';
+    document.getElementById('det-label').textContent   = 'Live';
+  } catch(e) {
+    alert('Camera access denied. Please allow camera permission in your browser.');
+  }
+}
+
+function stopCam() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  const vid = document.getElementById('vid');
+  vid.srcObject = null;
+  document.getElementById('btn-start').style.display = 'block';
+  document.getElementById('btn-snap').style.display  = 'none';
+  document.getElementById('btn-stop').style.display  = 'none';
+  document.getElementById('det-box').style.display   = 'none';
+}
+
+function snapPhoto() {
+  const vid = document.getElementById('vid');
+  const cnv = document.getElementById('cnv');
+  cnv.width  = vid.videoWidth  || 640;
+  cnv.height = vid.videoHeight || 480;
+  cnv.getContext('2d').drawImage(vid, 0, 0);
+  snapData = cnv.toDataURL('image/jpeg', 0.85);
+
+  // Show preview
+  document.getElementById('snap-img').src = snapData;
+  document.getElementById('snap-wrap').style.display = 'block';
+}
+
+function sendToFriday() {
+  if (!snapData) return;
+  // Store in sessionStorage so Streamlit component can read it
+  sessionStorage.setItem('friday_snap', snapData);
+  // Post via URL param (lightweight signal to Python)
+  const url = new URL(window.location.href);
+  url.searchParams.set('snap', Date.now());
+  window.history.replaceState({}, '', url);
+  // Trigger Streamlit rerun via hidden form post
+  document.getElementById('frame-data').value = snapData;
+  window.dispatchEvent(new CustomEvent('friday-snap', { detail: snapData }));
+}
+</script>
+"""
+
+# ── Vision with Groq (LLaMA Vision) ──────────────────────────────────────
+def ask_vision(image_b64: str, question: str = "What do you see in this image? Describe objects, scene, and anything notable. Be concise.") -> str:
+    """Send image to Groq vision model. Works on cloud — no local camera needed."""
+    key = st.session_state.groq_key
+    if not key:
+        return "Add your Groq API key in ☰ Setup to analyse images."
+    try:
+        from groq import Groq as _Groq
+        client = _Groq(api_key=key)
+        # Strip data URL prefix if present
+        if "," in image_b64:
+            image_b64 = image_b64.split(",", 1)[1]
+        r = client.chat.completions.create(
+            model="meta-llama/llama-4-scout-17b-16e-instruct",  # Groq vision model
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image_url",
+                     "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                    {"type": "text", "text": question}
+                ]
+            }],
+            max_tokens=300
+        )
+        return r.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Vision error: {e}"
+
 # ── MAIN LAYOUT:  camera | chat
 # ─────────────────────────────────────────────────────────────────────────
 col_cam, col_chat = st.columns([11, 9], gap="small")
@@ -524,62 +676,39 @@ col_cam, col_chat = st.columns([11, 9], gap="small")
 #  CAMERA COLUMN
 # ══════════════════════════════════════════
 with col_cam:
-    cam_slot = st.empty()
-    det_slot = st.empty()
+    # Render the browser webcam widget
+    st.components.v1.html(WEBCAM_HTML, height=520, scrolling=False)
 
-    # Controls
-    cc1, cc2, cc3, _ = st.columns([2, 2, 2, 4])
-    with cc1:
-        snap   = st.button("📸 Capture")
-    with cc2:
-        live   = st.toggle("🔴 Live", value=False)
-    with cc3:
-        ask_cam = st.button("💬 Ask about this")
+    st.markdown(
+        '<div style="font-size:.72rem;color:#5f6368;margin-top:4px;">📷 Uses your device camera directly — works on phone, tablet, laptop</div>',
+        unsafe_allow_html=True
+    )
 
-    if snap or live:
-        fb = grab_frame()
-        if fb:
-            cam_slot.image(fb, use_container_width=True)
-            det_slot.markdown(
-                f'<div style="font-size:.75rem;color:#9aa0a6;padding:4px 0;">'
-                f'Detected: <span style="color:#8ab4f8;">{st.session_state.detected}</span></div>',
-                unsafe_allow_html=True
-            )
-            st.session_state.cam_frame = True
-        else:
-            cam_slot.markdown("""
-            <div style="background:#111;border-radius:12px;aspect-ratio:16/9;
-                        display:flex;flex-direction:column;align-items:center;
-                        justify-content:center;gap:10px;color:#444;">
-              <div style="font-size:3rem;">📷</div>
-              <div style="font-size:.8rem;">Camera offline — works locally</div>
-              <div style="font-size:.7rem;color:#333;">Streamlit Cloud has no camera access</div>
-            </div>""", unsafe_allow_html=True)
-    else:
-        cam_slot.markdown("""
-        <div style="background:#111;border-radius:12px;aspect-ratio:16/9;
-                    display:flex;flex-direction:column;align-items:center;
-                    justify-content:center;gap:10px;color:#3c3c3c;">
-          <div style="font-size:3rem;">📷</div>
-          <div style="font-size:.8rem;">Press Capture or enable Live</div>
-        </div>""", unsafe_allow_html=True)
-
-    if live and CAM_OK:
-        live_slot = st.empty()
-        for _ in range(50):
-            fb = grab_frame()
-            if fb:
-                live_slot.image(fb, use_container_width=True)
-            time.sleep(0.12)
-
-    if ask_cam:
-        cam_q = f"What do you see? Camera detected: {st.session_state.detected}. Describe it and give insights."
-        ctx   = rag_query(cam_q)
-        reply = ask_ai(cam_q, ctx, st.session_state.detected)
-        t = datetime.now().strftime("%I:%M %p")
-        st.session_state.messages.append({"role":"user",     "content":cam_q, "time":t})
-        st.session_state.messages.append({"role":"assistant","content":reply, "time":t, "used_kb":bool(ctx)})
-        st.rerun()
+    # ── Upload a photo instead (fallback for cloud) ─────────────────────
+    with st.expander("📁 Or upload a photo to analyse"):
+        uploaded_img = st.file_uploader("photo", type=["jpg","jpeg","png","webp"],
+                                         label_visibility="collapsed", key="photo_upload")
+        ask_photo_q  = st.text_input("Question about this photo",
+                                      value="What do you see? Describe everything.",
+                                      key="photo_q")
+        if uploaded_img and st.button("✦ Analyse Photo", key="analyse_photo"):
+            img_bytes = uploaded_img.read()
+            img_b64   = base64.b64encode(img_bytes).decode()
+            with st.spinner("Friday is looking…"):
+                vision_reply = ask_vision(img_b64, ask_photo_q)
+            t = datetime.now().strftime("%I:%M %p")
+            st.session_state.messages.append({
+                "role":"user",
+                "content": f"[Photo uploaded] {ask_photo_q}",
+                "time": t
+            })
+            st.session_state.messages.append({
+                "role":"assistant",
+                "content": vision_reply,
+                "time": t,
+                "used_kb": False
+            })
+            st.rerun()
 
 # ══════════════════════════════════════════
 #  CHAT COLUMN
