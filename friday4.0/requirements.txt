@@ -1,15 +1,6 @@
-# ─── FRIDAY DASHBOARD — REQUIREMENTS ──────────────────────────────────────
-
-# Friday Dashboard — Streamlit Cloud requirements
-
-# Core
 streamlit>=1.35.0
 python-dotenv==1.0.1
-
-# AI
 groq==0.9.0
-
-# RAG
 langchain==0.2.6
 langchain-community==0.2.6
 langchain-huggingface==0.0.3
@@ -17,11 +8,6 @@ langchain-text-splitters==0.2.4
 faiss-cpu==1.8.0
 pypdf==4.2.0
 sentence-transformers==3.0.1
-
-# Vision (headless for cloud)
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
-Pillow==10.3.0
-
-# HTTP
 requests==2.32.3
