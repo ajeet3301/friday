@@ -1,155 +1,75 @@
 """
-╔══════════════════════════════════════════════════════════════╗
-║  FRIDAY AI  —  v5.0  FINAL                                   ║
-║  streamlit run main.py                                       ║
-╚══════════════════════════════════════════════════════════════╝
-
-EASY CUSTOMIZATION GUIDE  (search the tag to jump there)
-  #CONFIG      → API keys, models, default settings
-  #THEMES      → Color themes
-  #PROMPTS     → Friday's personality / system prompt
-  #VISION      → What happens when camera captures a frame
-  #AI          → Core LLM call (swap provider here)
-  #RAG         → PDF / text knowledge ingestion
-  #UI_MAIN     → Main page layout
-  #UI_SIDEBAR  → Settings panel
+FRIDAY AI  v6.0  — Voice + TTS + Always-on Camera
+Run: streamlit run main.py
 """
 
-import os, base64, io, json, time
+import os, base64, asyncio
 from datetime import datetime
 from pathlib import Path
 
 import streamlit as st
 from dotenv import load_dotenv
-
 load_dotenv()
 
-# ════════════════════════════════════════════════════════════════
-#CONFIG  ← change defaults here
-# ════════════════════════════════════════════════════════════════
-class CFG:
-    # ── API (override with .env or Streamlit secrets) ──────────
-    GROQ_API_KEY   = os.getenv("GROQ_API_KEY", "")
-    GROQ_CHAT      = os.getenv("GROQ_MODEL",   "llama-3.3-70b-versatile")
-    GROQ_VISION    = "meta-llama/llama-4-scout-17b-16e-instruct"  # vision model
-    GROQ_WHISPER   = "whisper-large-v3-turbo"
+# ════════════════════════════════════════════════════════
+# CONFIG  ← only edit this section
+# ════════════════════════════════════════════════════════
+GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
+GROQ_CHAT     = "llama-3.3-70b-versatile"
+GROQ_VISION   = "meta-llama/llama-4-scout-17b-16e-instruct"
+TTS_VOICE     = "en-IN-NeerjaNeural"   # Friday's voice
+# Other voices: "en-US-JennyNeural"  "en-GB-SoniaNeural"  "en-US-GuyNeural"
 
-    # ── Available models (shown in settings) ───────────────────
-    CHAT_MODELS = [
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant",
-        "mixtral-8x7b-32768",
-        "gemma2-9b-it",
-    ]
-    VISION_MODELS = [
-        "meta-llama/llama-4-scout-17b-16e-instruct",
-        "llama-3.2-11b-vision-preview",
-        "llama-3.2-90b-vision-preview",
-    ]
+CHAT_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it",
+]
+VISION_MODELS = [
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.2-11b-vision-preview",
+    "llama-3.2-90b-vision-preview",
+]
 
-    # ── Dirs ───────────────────────────────────────────────────
-    UPLOAD_DIR = Path("uploads")
-    KB_DIR     = Path("knowledge_base")
-
-    # ── RAG chunk settings ────────────────────────────────────
-    CHUNK_SIZE    = 800
-    CHUNK_OVERLAP = 100
-    RAG_TOP_K     = 3
-
-# ════════════════════════════════════════════════════════════════
-#THEMES  ← add / edit themes here
-# ════════════════════════════════════════════════════════════════
-THEMES = {
-    "Dark": {
-        "bg":      "#0f0f0f",
-        "surface": "#1a1a1a",
-        "s2":      "#242424",
-        "border":  "rgba(255,255,255,.07)",
-        "text":    "#e8eaed",
-        "muted":   "#9aa0a6",
-        "accent":  "#8ab4f8",
-        "accent2": "#a8d8a8",
-        "danger":  "#f28b82",
-    },
-    "Midnight": {
-        "bg":      "#050810",
-        "surface": "#0d1117",
-        "s2":      "#161b22",
-        "border":  "rgba(48,54,61,.8)",
-        "text":    "#c9d1d9",
-        "muted":   "#8b949e",
-        "accent":  "#58a6ff",
-        "accent2": "#3fb950",
-        "danger":  "#f85149",
-    },
-    "Slate": {
-        "bg":      "#0f172a",
-        "surface": "#1e293b",
-        "s2":      "#334155",
-        "border":  "rgba(148,163,184,.1)",
-        "text":    "#e2e8f0",
-        "muted":   "#94a3b8",
-        "accent":  "#818cf8",
-        "accent2": "#34d399",
-        "danger":  "#f87171",
-    },
-    "Amoled": {
-        "bg":      "#000000",
-        "surface": "#0a0a0a",
-        "s2":      "#111111",
-        "border":  "rgba(255,255,255,.05)",
-        "text":    "#ffffff",
-        "muted":   "#666666",
-        "accent":  "#00d4ff",
-        "accent2": "#00ff88",
-        "danger":  "#ff4444",
-    },
-    "Forest": {
-        "bg":      "#0a0f0a",
-        "surface": "#111811",
-        "s2":      "#1a2a1a",
-        "border":  "rgba(74,222,128,.08)",
-        "text":    "#dcfce7",
-        "muted":   "#86efac",
-        "accent":  "#4ade80",
-        "accent2": "#a3e635",
-        "danger":  "#f87171",
-    },
-}
-
-# ════════════════════════════════════════════════════════════════
-#PROMPTS  ← edit Friday's personality here
-# ════════════════════════════════════════════════════════════════
-DEFAULT_SYSTEM_PROMPT = """You are Friday, an advanced AI assistant like JARVIS from Iron Man.
-You can see through the camera and analyse images in real time.
-Be concise, helpful, and occasionally call the user "Boss".
-When analysing camera images: identify objects, plants, problems, and give practical solutions.
-For plant issues: identify the plant, diagnose problems (disease, pests, watering), give solutions.
-Keep answers short and actionable unless the user asks for detail.
+FRIDAY_PROMPT = """You are Friday, an advanced AI assistant like JARVIS from Iron Man.
+You can see through the camera in real time.
+Be concise and helpful. Occasionally call the user "Boss".
+For plants: name them, diagnose issues, give solutions.
+For objects: identify and explain.
+For problems: diagnose and fix.
+Keep answers short unless asked for detail.
 Current time: {time}"""
 
-VISION_PROMPT = """Analyse this image carefully. Identify:
-1. Main objects / subjects
-2. Any problems, issues, or anomalies (plant disease, damage, etc.)
-3. Practical solutions or recommendations
-Be specific and helpful. If it's a plant: name it, diagnose issues, suggest fixes."""
+VISION_PROMPT = """Look at this image carefully.
+1. What are the main objects or subjects?
+2. Are there any problems, damage, or issues? (plant disease, broken things, etc.)
+3. What are your practical recommendations?
+Be specific. If it is a plant: name it, find the problem, suggest the fix."""
 
-# ════════════════════════════════════════════════════════════════
-# DIRS + PAGE CONFIG
-# ════════════════════════════════════════════════════════════════
-CFG.UPLOAD_DIR.mkdir(exist_ok=True)
-CFG.KB_DIR.mkdir(exist_ok=True)
+# ════════════════════════════════════════════════════════
+# THEMES  ← add or edit here
+# ════════════════════════════════════════════════════════
+THEMES = {
+    "Dark":     {"bg":"#0f0f0f","sf":"#1a1a1a","s2":"#252525","bd":"rgba(255,255,255,.07)","tx":"#e8eaed","mu":"#9aa0a6","ac":"#8ab4f8","ac2":"#81c995"},
+    "Midnight": {"bg":"#050810","sf":"#0d1117","s2":"#161b22","bd":"rgba(48,54,61,.8)",    "tx":"#c9d1d9","mu":"#8b949e","ac":"#58a6ff","ac2":"#3fb950"},
+    "Slate":    {"bg":"#0f172a","sf":"#1e293b","s2":"#334155","bd":"rgba(148,163,184,.1)", "tx":"#e2e8f0","mu":"#94a3b8","ac":"#818cf8","ac2":"#34d399"},
+    "Amoled":   {"bg":"#000000","sf":"#0a0a0a","s2":"#111111","bd":"rgba(255,255,255,.05)","tx":"#ffffff","mu":"#555555","ac":"#00d4ff","ac2":"#00ff88"},
+    "Forest":   {"bg":"#0a0f0a","sf":"#111811","s2":"#1a2a1a","bd":"rgba(74,222,128,.08)","tx":"#dcfce7","mu":"#86efac","ac":"#4ade80","ac2":"#a3e635"},
+}
 
-st.set_page_config(
-    page_title="Friday",
-    page_icon="✦",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
+# ════════════════════════════════════════════════════════
+# DIRS + PAGE
+# ════════════════════════════════════════════════════════
+Path("uploads").mkdir(exist_ok=True)
+Path("knowledge_base").mkdir(exist_ok=True)
 
-# ════════════════════════════════════════════════════════════════
+st.set_page_config(page_title="Friday", page_icon="✦",
+                   layout="wide", initial_sidebar_state="collapsed")
+
+# ════════════════════════════════════════════════════════
 # OPTIONAL IMPORTS
-# ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════
 try:
     from groq import Groq
     GROQ_OK = True
@@ -166,633 +86,345 @@ try:
 except ImportError:
     RAG_OK = False
 
-# ════════════════════════════════════════════════════════════════
-# SESSION STATE INIT
-# ════════════════════════════════════════════════════════════════
+try:
+    import edge_tts
+    TTS_OK = True
+except ImportError:
+    TTS_OK = False
+
+# ════════════════════════════════════════════════════════
+# SESSION STATE
+# ════════════════════════════════════════════════════════
 def _init():
-    defaults = {
-        "messages":     [],
-        "vectorstore":  None,
-        "kb_docs":      [],
-        "groq_key":     CFG.GROQ_API_KEY,
-        "chat_model":   CFG.GROQ_CHAT,
-        "vision_model": CFG.GROQ_VISION,
-        "sys_prompt":   DEFAULT_SYSTEM_PROMPT,
-        "theme_name":   "Dark",
-        "detected":     "",
-        "last_snap_b64": None,
-        "cam_analysis": "",
-    }
-    for k, v in defaults.items():
+    for k, v in {
+        "messages":      [],
+        "vectorstore":   None,
+        "kb_docs":       [],
+        "groq_key":      GROQ_API_KEY,
+        "chat_model":    GROQ_CHAT,
+        "vision_model":  GROQ_VISION,
+        "sys_prompt":    FRIDAY_PROMPT,
+        "theme":         "Dark",
+        "tts_on":        True,
+        "cam_analysis":  "",
+        "settings_open": False,
+    }.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 _init()
 
-# ════════════════════════════════════════════════════════════════
-# THEME HELPER
-# ════════════════════════════════════════════════════════════════
-def T(key):
-    return THEMES[st.session_state.theme_name][key]
+def T(k):
+    return THEMES[st.session_state.theme][k]
 
-# ════════════════════════════════════════════════════════════════
-# CSS — injected dynamically so theme changes apply live
-# ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════
+# CSS
+# ════════════════════════════════════════════════════════
 def inject_css():
-    t = THEMES[st.session_state.theme_name]
-    st.markdown(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&family=DM+Mono:wght@400;500&display=swap');
-
-:root {{
-  --bg:      {t['bg']};
-  --sf:      {t['surface']};
-  --sf2:     {t['s2']};
-  --bd:      {t['border']};
-  --tx:      {t['text']};
-  --mu:      {t['muted']};
-  --ac:      {t['accent']};
-  --ac2:     {t['accent2']};
-  --dg:      {t['danger']};
-  --sans:    'DM Sans', sans-serif;
-  --mono:    'DM Mono', monospace;
-  --rad:     12px;
-  --rad-sm:  8px;
-  --rad-pill:24px;
-}}
-
-/* ── RESET ── */
-html,body,[class*="css"]{{
-  font-family:var(--sans)!important;
-  background:var(--bg)!important;
-  color:var(--tx)!important;
-  line-height:1.5;
-}}
+    t = THEMES[st.session_state.theme]
+    st.markdown(f"""<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono&display=swap');
+:root{{--bg:{t['bg']};--sf:{t['sf']};--s2:{t['s2']};--bd:{t['bd']};
+      --tx:{t['tx']};--mu:{t['mu']};--ac:{t['ac']};--ac2:{t['ac2']};
+      --sans:'DM Sans',sans-serif;--mono:'DM Mono',monospace;}}
+html,body,[class*="css"]{{font-family:var(--sans)!important;background:var(--bg)!important;color:var(--tx)!important;}}
 *{{box-sizing:border-box;}}
 #MainMenu,footer,header{{visibility:hidden;}}
 .block-container{{padding:0!important;max-width:100%!important;}}
-
-/* ── SCROLLBAR ── */
-::-webkit-scrollbar{{width:3px;height:3px;}}
-::-webkit-scrollbar-track{{background:transparent;}}
+::-webkit-scrollbar{{width:3px;}}
 ::-webkit-scrollbar-thumb{{background:var(--bd);border-radius:2px;}}
-
-/* ── TOPBAR ── */
-.topbar{{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:12px 20px;
-  background:var(--bg);
-  border-bottom:1px solid var(--bd);
-  position:sticky;top:0;z-index:200;
-  backdrop-filter:blur(20px);
-}}
-.logo{{
-  font-size:1.05rem;font-weight:600;color:var(--tx);
-  display:flex;align-items:center;gap:8px;letter-spacing:-.02em;
-}}
-.logo-star{{color:var(--ac);font-size:1.1rem;}}
-.topbar-right{{display:flex;align-items:center;gap:8px;}}
-
-/* ── STATUS PILL ── */
-.status-pill{{
-  display:inline-flex;align-items:center;gap:6px;
-  padding:5px 12px;border-radius:var(--rad-pill);
-  border:1px solid var(--bd);
-  font-size:.72rem;color:var(--mu);background:var(--sf);
-  cursor:default;
-}}
-.sdot{{width:6px;height:6px;border-radius:50%;flex-shrink:0;}}
-.sdot-green{{background:var(--ac2);box-shadow:0 0 6px var(--ac2);animation:sdpulse 2s infinite;}}
-.sdot-grey {{background:#444;}}
-.sdot-blue {{background:var(--ac);box-shadow:0 0 6px var(--ac);animation:sdpulse 2s infinite;}}
-@keyframes sdpulse{{0%,100%{{opacity:1}}50%{{opacity:.4}}}}
-
-/* ── ICON BTN ── */
-.icon-btn{{
-  width:36px;height:36px;border-radius:50%;
-  background:var(--sf);border:1px solid var(--bd);
+.tb{{display:flex;align-items:center;justify-content:space-between;
+  padding:11px 20px;background:var(--bg);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:100;}}
+.tb-logo{{font-size:1rem;font-weight:600;color:var(--tx);display:flex;align-items:center;gap:8px;}}
+.tb-star{{color:var(--ac);}}
+.tb-r{{display:flex;align-items:center;gap:8px;}}
+.spill{{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:20px;
+  border:1px solid var(--bd);font-size:.7rem;color:var(--mu);background:var(--sf);}}
+.sdot{{width:5px;height:5px;border-radius:50%;flex-shrink:0;}}
+.sg{{background:var(--ac2);box-shadow:0 0 5px var(--ac2);animation:pp 2s infinite;}}
+.sr{{background:#444;}}
+.sb{{background:var(--ac);box-shadow:0 0 5px var(--ac);animation:pp 2s infinite;}}
+@keyframes pp{{0%,100%{{opacity:1}}50%{{opacity:.3}}}}
+.mu{{display:flex;justify-content:flex-end;margin:4px 0;}}
+.ma{{display:flex;gap:9px;align-items:flex-start;margin:4px 0;}}
+.av{{width:25px;height:25px;border-radius:50%;flex-shrink:0;margin-top:2px;
   display:flex;align-items:center;justify-content:center;
-  cursor:pointer;transition:.15s;color:var(--mu);font-size:.9rem;
-}}
-.icon-btn:hover{{background:var(--sf2);color:var(--tx);border-color:rgba(255,255,255,.15);}}
-
-/* ── MAIN GRID ── */
-.main-grid{{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  height:calc(100vh - 57px);
-  overflow:hidden;
-}}
-
-/* ── CAM PANEL ── */
-.cam-panel{{
-  background:#000;
-  border-right:1px solid var(--bd);
-  display:flex;flex-direction:column;
-  overflow:hidden;position:relative;
-}}
-
-/* ── CHAT PANEL ── */
-.chat-panel{{
-  display:flex;flex-direction:column;
-  background:var(--bg);
-  overflow:hidden;
-}}
-
-/* ── CHAT MESSAGES ── */
-.chat-scroll{{
-  flex:1;overflow-y:auto;
-  padding:16px 20px;
-  display:flex;flex-direction:column;gap:12px;
-}}
-
-/* Welcome screen */
-.welcome-wrap{{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  flex:1;padding:32px 24px;text-align:center;gap:12px;
-}}
-.welcome-title{{font-size:1.75rem;font-weight:300;letter-spacing:-.03em;}}
-.welcome-title b{{color:var(--ac);font-weight:600;}}
-.welcome-sub{{font-size:.85rem;color:var(--mu);max-width:280px;line-height:1.7;}}
-.chips{{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:8px;}}
-.chip{{
-  padding:8px 16px;border-radius:var(--rad-pill);
-  border:1px solid var(--bd);font-size:.8rem;color:var(--mu);
-  cursor:pointer;transition:.15s;background:var(--sf);
-}}
-.chip:hover{{background:var(--sf2);color:var(--tx);border-color:rgba(255,255,255,.15);}}
-
-/* Messages */
-.msg-user{{
-  display:flex;justify-content:flex-end;
-}}
-.msg-ai{{
-  display:flex;gap:10px;align-items:flex-start;
-}}
-.av{{
-  width:26px;height:26px;border-radius:50%;flex-shrink:0;
-  display:flex;align-items:center;justify-content:center;
-  font-size:.7rem;margin-top:2px;
-  background:var(--sf2);border:1px solid var(--bd);color:var(--ac);
-}}
-.bub{{
-  max-width:82%;padding:10px 14px;font-size:.84rem;line-height:1.65;
-  border-radius:18px;
-}}
-.bub-user{{background:var(--sf2);border-radius:18px 4px 18px 18px;}}
-.bub-ai{{background:var(--sf);border-radius:4px 18px 18px 18px;}}
-.bub-meta{{font-size:.6rem;color:var(--mu);margin-top:4px;}}
-.kb-badge{{
-  display:inline-block;font-size:.58rem;padding:1px 6px;
+  font-size:.65rem;background:var(--s2);border:1px solid var(--bd);color:var(--ac);}}
+.bu{{max-width:82%;padding:9px 13px;font-size:.83rem;line-height:1.65;border-radius:16px;}}
+.bu-u{{background:var(--s2);border-radius:16px 4px 16px 16px;}}
+.bu-a{{background:var(--sf);border-radius:4px 16px 16px 16px;}}
+.bm{{font-size:.58rem;color:var(--mu);margin-top:3px;}}
+.kb{{display:inline-block;font-size:.56rem;padding:1px 5px;
   background:rgba(138,180,248,.1);border:1px solid rgba(138,180,248,.2);
-  border-radius:6px;color:var(--ac);margin-left:5px;vertical-align:middle;
-}}
-.cam-badge{{
-  display:inline-block;font-size:.58rem;padding:1px 6px;
-  background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.2);
-  border-radius:6px;color:var(--ac2);margin-left:5px;vertical-align:middle;
-}}
-
-/* Typing indicator */
-.typing{{display:flex;gap:5px;padding:10px 14px;background:var(--sf);
-  border-radius:4px 18px 18px 18px;width:fit-content;}}
-.typing span{{width:5px;height:5px;border-radius:50%;background:var(--mu);
-  animation:bounce .9s infinite;}}
-.typing span:nth-child(2){{animation-delay:.15s;}}
-.typing span:nth-child(3){{animation-delay:.3s;}}
-@keyframes bounce{{0%,100%{{transform:translateY(0);opacity:.4}}50%{{transform:translateY(-4px);opacity:1}}}}
-
-/* ── BOTTOM INPUT ── */
-.input-wrap{{
-  padding:12px 16px 16px;
-  border-top:1px solid var(--bd);
-  background:var(--bg);
-}}
-.input-row{{
-  display:flex;align-items:center;gap:8px;
-  background:var(--sf);border:1px solid var(--bd);
-  border-radius:var(--rad-pill);padding:6px 6px 6px 16px;
-  transition:.2s;
-}}
-.input-row:focus-within{{
-  border-color:color-mix(in srgb,var(--ac) 50%,transparent);
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 8%,transparent);
-}}
-
-/* ── SETTINGS SIDEBAR ── */
-.settings-panel{{
-  position:fixed;right:0;top:0;bottom:0;width:300px;
-  background:var(--sf);border-left:1px solid var(--bd);
-  z-index:999;overflow-y:auto;
-  transform:translateX(100%);
-  transition:transform .25s cubic-bezier(.4,0,.2,1);
-  padding:20px;
-}}
-.settings-panel.open{{transform:translateX(0);}}
-.settings-title{{
-  font-size:.95rem;font-weight:600;margin-bottom:16px;
-  display:flex;align-items:center;justify-content:space-between;
-}}
-.settings-section{{
-  font-size:.68rem;color:var(--mu);letter-spacing:.08em;
-  text-transform:uppercase;margin:16px 0 8px;
-}}
-.theme-grid{{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}}
-.theme-swatch{{
-  aspect-ratio:1;border-radius:8px;cursor:pointer;
-  border:2px solid transparent;transition:.15s;
-  display:flex;align-items:center;justify-content:center;
-  font-size:.6rem;color:rgba(255,255,255,.7);
-}}
-.theme-swatch:hover{{transform:scale(1.08);}}
-.theme-swatch.active{{border-color:var(--ac);}}
-
-/* ── OVERLAY (dim behind settings panel) ── */
-.overlay{{
-  display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:998;
-}}
-.overlay.show{{display:block;}}
-
-/* ── STREAMLIT OVERRIDES ── */
-.stTextInput>div>div>input{{
-  background:transparent!important;border:none!important;
-  box-shadow:none!important;color:var(--tx)!important;
-  font-family:var(--sans)!important;font-size:.9rem!important;
-  padding:4px 0!important;
-}}
+  border-radius:5px;color:var(--ac);margin-left:4px;vertical-align:middle;}}
+.cb2{{display:inline-block;font-size:.56rem;padding:1px 5px;
+  background:rgba(129,201,149,.1);border:1px solid rgba(129,201,149,.2);
+  border-radius:5px;color:var(--ac2);margin-left:4px;vertical-align:middle;}}
+.stTextInput>div>div>input{{background:transparent!important;border:none!important;
+  box-shadow:none!important;color:var(--tx)!important;font-family:var(--sans)!important;font-size:.88rem!important;padding:4px 0!important;}}
 .stTextInput>label{{display:none!important;}}
-.stButton>button{{
-  background:var(--ac)!important;color:#000!important;
-  border:none!important;border-radius:var(--rad-pill)!important;
-  font-family:var(--sans)!important;font-weight:500!important;
-  padding:8px 20px!important;font-size:.8rem!important;
-  transition:.15s!important;white-space:nowrap!important;
-}}
-.stButton>button:hover{{opacity:.88!important;transform:scale(1.01)!important;}}
-
-/* ghost button variant */
-button.ghost{{
-  background:transparent!important;border:1px solid var(--bd)!important;
-  color:var(--mu)!important;
-}}
-button.ghost:hover{{background:var(--sf2)!important;color:var(--tx)!important;}}
-
-.stSelectbox>div>div{{
-  background:var(--sf2)!important;border:1px solid var(--bd)!important;
-  border-radius:var(--rad-sm)!important;color:var(--tx)!important;
-}}
-.stTextArea>div>div>textarea{{
-  background:var(--sf2)!important;border:1px solid var(--bd)!important;
-  border-radius:var(--rad-sm)!important;color:var(--tx)!important;
-  font-family:var(--sans)!important;
-}}
-.stFileUploader>div{{
-  background:var(--sf2)!important;
-  border:2px dashed color-mix(in srgb,var(--ac) 30%,transparent)!important;
-  border-radius:var(--rad)!important;
-}}
-.stFileUploader label{{color:var(--mu)!important;}}
-div[data-testid="stSidebar"]{{
-  background:var(--sf)!important;
-  border-right:1px solid var(--bd)!important;
-  min-width:300px!important;max-width:300px!important;
-}}
-div[data-testid="stSidebar"] .stMarkdown p,
-div[data-testid="stSidebar"] label,
-div[data-testid="stSidebar"] .stSelectbox label{{color:var(--tx)!important;}}
-.stExpander summary{{color:var(--mu)!important;font-size:.82rem!important;}}
-.stExpander[data-expanded="true"] summary{{color:var(--tx)!important;}}
+.stButton>button{{background:var(--ac)!important;color:#000!important;border:none!important;
+  border-radius:20px!important;font-family:var(--sans)!important;font-weight:500!important;
+  padding:7px 18px!important;font-size:.78rem!important;transition:.15s!important;}}
+.stButton>button:hover{{opacity:.85!important;}}
+.stSelectbox>div>div{{background:var(--s2)!important;border:1px solid var(--bd)!important;
+  border-radius:8px!important;color:var(--tx)!important;}}
+.stTextArea>div>div>textarea{{background:var(--s2)!important;border:1px solid var(--bd)!important;
+  border-radius:8px!important;color:var(--tx)!important;font-family:var(--sans)!important;}}
+.stFileUploader>div{{background:var(--s2)!important;
+  border:2px dashed rgba(138,180,248,.25)!important;border-radius:10px!important;}}
+div[data-testid="stSidebar"]{{background:var(--sf)!important;
+  border-right:1px solid var(--bd)!important;min-width:290px!important;max-width:290px!important;}}
+div[data-testid="stSidebar"] p,div[data-testid="stSidebar"] label{{color:var(--tx)!important;}}
+.stExpander summary{{color:var(--mu)!important;font-size:.8rem!important;}}
 .stDivider{{border-color:var(--bd)!important;}}
-.stAlert{{background:var(--sf2)!important;border-color:var(--bd)!important;}}
-.element-container{{animation:fadeUp .2s ease;}}
-@keyframes fadeUp{{from{{opacity:0;transform:translateY(4px)}}to{{opacity:1;transform:none}}}}
-</style>
-""", unsafe_allow_html=True)
+</style>""", unsafe_allow_html=True)
 
 inject_css()
 
-# ════════════════════════════════════════════════════════════════
-# WEBCAM HTML — always-on, browser-native
-# ════════════════════════════════════════════════════════════════
-CAM_HTML = f"""
-<!DOCTYPE html>
-<html>
-<head>
-<style>
-*{{margin:0;padding:0;box-sizing:border-box;}}
-body{{background:#000;font-family:'DM Sans',sans-serif;overflow:hidden;}}
+# ════════════════════════════════════════════════════════
+# TTS — Friday speaks
+# ════════════════════════════════════════════════════════
+def speak(text: str):
+    """Converts text to speech and auto-plays in browser."""
+    if not st.session_state.tts_on or not TTS_OK:
+        return
+    try:
+        async def _gen():
+            com  = edge_tts.Communicate(text[:400], TTS_VOICE)
+            data = b""
+            async for chunk in com.stream():
+                if chunk["type"] == "audio":
+                    data += chunk["data"]
+            return data
 
-#wrap{{position:relative;width:100%;height:480px;background:#000;}}
-video{{width:100%;height:100%;object-fit:cover;display:block;}}
+        audio = asyncio.run(_gen())
+        b64   = base64.b64encode(audio).decode()
+        st.markdown(
+            f'<audio autoplay style="display:none">'
+            f'<source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>',
+            unsafe_allow_html=True)
+    except Exception:
+        pass
 
-/* Overlay HUD */
-#hud{{
-  position:absolute;inset:0;pointer-events:none;
-}}
-
-/* Top-left: logo */
-#hud-logo{{
-  position:absolute;top:14px;left:14px;
-  color:rgba(255,255,255,.7);font-size:.75rem;
-  display:flex;align-items:center;gap:6px;
-}}
-#live-dot{{
-  width:7px;height:7px;border-radius:50%;
-  background:#4ade80;box-shadow:0 0 6px #4ade80;
-  animation:pulse 2s infinite;
-}}
-@keyframes pulse{{0%,100%{{opacity:1}}50%{{opacity:.3}}}}
-
-/* Bottom: detected label */
-#detect-box{{
-  position:absolute;bottom:56px;left:14px;
-  background:rgba(0,0,0,.65);backdrop-filter:blur(8px);
-  border:1px solid rgba(255,255,255,.12);border-radius:8px;
-  padding:6px 12px;display:none;
-}}
-#detect-text{{
-  font-size:.72rem;color:#8ab4f8;font-family:'DM Mono',monospace;
-}}
-#detect-sub{{font-size:.62rem;color:rgba(255,255,255,.4);margin-top:2px;}}
-
-/* Corner brackets */
-.corner{{position:absolute;width:18px;height:18px;opacity:.4;}}
-.corner.tl{{top:10px;left:10px;border-top:2px solid #8ab4f8;border-left:2px solid #8ab4f8;}}
-.corner.tr{{top:10px;right:10px;border-top:2px solid #8ab4f8;border-right:2px solid #8ab4f8;}}
-.corner.bl{{bottom:50px;left:10px;border-bottom:2px solid #8ab4f8;border-left:2px solid #8ab4f8;}}
-.corner.br{{bottom:50px;right:10px;border-bottom:2px solid #8ab4f8;border-right:2px solid #8ab4f8;}}
-
-/* Offline state */
-#offline{{
-  position:absolute;inset:0;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:12px;color:#444;
-}}
-#offline-icon{{font-size:3rem;opacity:.3;}}
-#offline-text{{font-size:.82rem;}}
-#offline-sub{{font-size:.7rem;color:#333;}}
-
-/* Bottom controls bar */
-#controls{{
-  position:absolute;bottom:0;left:0;right:0;
-  padding:10px 14px;
-  background:linear-gradient(transparent,rgba(0,0,0,.8));
-  display:flex;align-items:center;gap:10px;pointer-events:all;
-}}
-.ctrl-btn{{
-  padding:7px 16px;border-radius:20px;font-size:.75rem;
-  border:1px solid rgba(255,255,255,.18);
-  background:rgba(0,0,0,.5);color:rgba(255,255,255,.8);
-  cursor:pointer;backdrop-filter:blur(8px);
-  font-family:'DM Sans',sans-serif;transition:.15s;
-  white-space:nowrap;
-}}
-.ctrl-btn:hover{{background:rgba(255,255,255,.1);color:#fff;}}
-.ctrl-btn.primary{{
-  background:{T('accent')};color:#000;border:none;font-weight:600;
-}}
-.ctrl-btn.primary:hover{{opacity:.85;}}
-#snap-flash{{
-  position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;
-  transition:opacity .1s;
-}}
-</style>
-</head>
-<body>
-<div id="wrap">
-  <video id="vid" autoplay playsinline muted></video>
-
-  <!-- Scan corners -->
-  <div class="corner tl"></div>
-  <div class="corner tr"></div>
-  <div class="corner bl"></div>
-  <div class="corner br"></div>
-
-  <!-- HUD -->
-  <div id="hud">
-    <div id="hud-logo">
-      <div id="live-dot" style="display:none;"></div>
-      <span id="hud-status">OFFLINE</span>
-    </div>
-    <div id="detect-box">
-      <div id="detect-text">Scanning…</div>
-      <div id="detect-sub">tap Analyse to identify</div>
-    </div>
-  </div>
-
-  <!-- Offline placeholder -->
-  <div id="offline">
-    <div id="offline-icon">📷</div>
-    <div id="offline-text">Camera ready</div>
-    <div id="offline-sub">Press Start to activate</div>
-  </div>
-
-  <!-- Snap flash -->
-  <div id="snap-flash"></div>
-
-  <!-- Controls -->
-  <div id="controls">
-    <button class="ctrl-btn primary" id="btn-start" onclick="startCam()">▶ Start Camera</button>
-    <button class="ctrl-btn" id="btn-snap" onclick="snapPhoto()" style="display:none;">📸 Capture</button>
-    <button class="ctrl-btn" id="btn-stop" onclick="stopCam()" style="display:none;">■ Stop</button>
-    <button class="ctrl-btn" id="btn-front" onclick="toggleFacing()" style="display:none;">🔄 Flip</button>
-  </div>
+# ════════════════════════════════════════════════════════
+# VOICE MIC widget (browser Web Speech API)
+# ════════════════════════════════════════════════════════
+VOICE_HTML = """
+<div style="display:flex;align-items:center;gap:10px;padding:4px 0 2px;">
+  <button id="mic" onclick="toggleMic()"
+    style="width:40px;height:40px;border-radius:50%;border:none;
+           background:#8ab4f8;color:#000;font-size:1rem;cursor:pointer;
+           display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.2s;">
+    🎤
+  </button>
+  <div id="lbl" style="font-size:.74rem;color:#9aa0a6;">Press mic → speak → paste result below</div>
 </div>
-
-<!-- hidden output -->
-<input type="hidden" id="snap-out" value="">
+<div id="rbox" style="display:none;margin-top:5px;padding:7px 11px;
+  background:rgba(138,180,248,.08);border:1px solid rgba(138,180,248,.18);
+  border-radius:9px;font-size:.82rem;color:#e8eaed;"></div>
 
 <script>
-let stream = null;
-let facing = 'environment'; // rear cam default
-
-async function startCam() {{
-  try {{
-    stream = await navigator.mediaDevices.getUserMedia({{
-      video: {{ facingMode: facing, width:{{ideal:1280}}, height:{{ideal:720}} }},
-      audio: false
-    }});
-    document.getElementById('vid').srcObject = stream;
-    document.getElementById('offline').style.display = 'none';
-    document.getElementById('live-dot').style.display = 'block';
-    document.getElementById('hud-status').textContent = 'LIVE';
-    document.getElementById('detect-box').style.display = 'block';
-    document.getElementById('btn-start').style.display = 'none';
-    document.getElementById('btn-snap').style.display  = 'block';
-    document.getElementById('btn-stop').style.display  = 'block';
-    document.getElementById('btn-front').style.display = 'block';
-  }} catch(e) {{
-    document.getElementById('offline-text').textContent = 'Camera permission denied';
-    document.getElementById('offline-sub').textContent  = 'Allow camera in browser settings';
-  }}
-}}
-
-async function toggleFacing() {{
-  facing = facing === 'environment' ? 'user' : 'environment';
-  if (stream) {{ stream.getTracks().forEach(t => t.stop()); }}
-  await startCam();
-}}
-
-function stopCam() {{
-  if (stream) {{ stream.getTracks().forEach(t => t.stop()); stream = null; }}
-  document.getElementById('vid').srcObject = null;
-  document.getElementById('offline').style.display = 'flex';
-  document.getElementById('live-dot').style.display = 'none';
-  document.getElementById('hud-status').textContent = 'OFFLINE';
-  document.getElementById('detect-box').style.display = 'none';
-  document.getElementById('btn-start').style.display = 'block';
-  document.getElementById('btn-snap').style.display  = 'none';
-  document.getElementById('btn-stop').style.display  = 'none';
-  document.getElementById('btn-front').style.display = 'none';
-}}
-
-function snapPhoto() {{
-  const vid = document.getElementById('vid');
-  const cnv = document.createElement('canvas');
-  cnv.width  = vid.videoWidth  || 640;
-  cnv.height = vid.videoHeight || 480;
-  cnv.getContext('2d').drawImage(vid, 0, 0);
-
-  // Flash effect
-  const fl = document.getElementById('snap-flash');
-  fl.style.opacity = '0.7';
-  setTimeout(() => fl.style.opacity = '0', 120);
-
-  const b64 = cnv.toDataURL('image/jpeg', 0.85);
-  document.getElementById('snap-out').value = b64;
-
-  // Post to Streamlit via URL param trick
-  const url = new URL(window.location.href);
-  url.searchParams.set('snap', Date.now().toString());
-  window.history.replaceState({{}}, '', url);
-
-  // Store in parent
-  try {{
-    window.parent.postMessage({{ type:'friday_snap', data: b64 }}, '*');
-  }} catch(e) {{}}
-}}
+let rec=false,r=null;
+function toggleMic(){
+  if(rec){r.stop();return;}
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){document.getElementById('lbl').textContent='Use Chrome for voice input';return;}
+  r=new SR();r.lang='en-US';r.continuous=false;r.interimResults=true;
+  r.onstart=()=>{
+    rec=true;
+    document.getElementById('mic').style.background='#f28b82';
+    document.getElementById('mic').textContent='🔴';
+    document.getElementById('lbl').textContent='Listening…';
+    document.getElementById('rbox').style.display='none';
+  };
+  r.onend=()=>{
+    rec=false;
+    document.getElementById('mic').style.background='#8ab4f8';
+    document.getElementById('mic').textContent='🎤';
+  };
+  r.onresult=(e)=>{
+    let f='',i='';
+    for(let x of e.results){if(x.isFinal)f+=x[0].transcript;else i+=x[0].transcript;}
+    const t=f||i;
+    document.getElementById('rbox').style.display='block';
+    document.getElementById('rbox').textContent=t;
+    document.getElementById('lbl').textContent=f?'✓ Copy this and paste in chat box below':'Hearing…';
+  };
+  r.onerror=(e)=>{
+    rec=false;
+    document.getElementById('lbl').textContent='Mic error: '+e.error;
+    document.getElementById('mic').style.background='#8ab4f8';
+    document.getElementById('mic').textContent='🎤';
+  };
+  r.start();
+}
 </script>
-</body>
-</html>
 """
 
-# ════════════════════════════════════════════════════════════════
-#VISION  ← paste your detection/analysis logic here
-# ════════════════════════════════════════════════════════════════
-def analyse_image(image_b64: str, question: str = "") -> str:
-    """
-    Send image to Groq vision model.
-    image_b64: base64 string (with or without data: prefix)
-    question:  optional custom question, defaults to VISION_PROMPT
-    """
-    key = st.session_state.groq_key
-    if not key:
-        return "Add your Groq API key in ⚙ Settings to analyse images."
-    if not GROQ_OK:
-        return "Install groq: pip install groq"
+# ════════════════════════════════════════════════════════
+# CAMERA HTML (always-on, browser webcam)
+# ════════════════════════════════════════════════════════
+def cam_html(accent):
+    return f"""<!DOCTYPE html><html><head><style>
+*{{margin:0;padding:0;box-sizing:border-box;}}
+body{{background:#000;overflow:hidden;font-family:'DM Sans',sans-serif;}}
+#w{{position:relative;width:100%;}}
+video{{width:100%;height:460px;object-fit:cover;display:block;}}
+.corner{{position:absolute;width:15px;height:15px;opacity:.5;}}
+.tl{{top:8px;left:8px;border-top:2px solid {accent};border-left:2px solid {accent};}}
+.tr{{top:8px;right:8px;border-top:2px solid {accent};border-right:2px solid {accent};}}
+.bl{{bottom:50px;left:8px;border-bottom:2px solid {accent};border-left:2px solid {accent};}}
+.br{{bottom:50px;right:8px;border-bottom:2px solid {accent};border-right:2px solid {accent};}}
+#hud{{position:absolute;top:11px;left:11px;color:rgba(255,255,255,.75);font-size:.7rem;
+  display:flex;align-items:center;gap:6px;}}
+#ldot{{width:6px;height:6px;border-radius:50%;background:#4ade80;
+  box-shadow:0 0 6px #4ade80;animation:pp 2s infinite;display:none;}}
+@keyframes pp{{0%,100%{{opacity:1}}50%{{opacity:.3}}}}
+#off{{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;color:#333;}}
+#off-i{{font-size:2.5rem;opacity:.25;}}
+#bar{{position:absolute;bottom:0;left:0;right:0;padding:8px 12px;
+  background:linear-gradient(transparent,rgba(0,0,0,.85));
+  display:flex;gap:8px;align-items:center;}}
+.cb{{padding:6px 13px;border-radius:17px;font-size:.72rem;cursor:pointer;
+  border:1px solid rgba(255,255,255,.15);background:rgba(0,0,0,.5);
+  color:rgba(255,255,255,.8);transition:.15s;white-space:nowrap;}}
+.cb:hover{{background:rgba(255,255,255,.12);}}
+.cp{{background:{accent};color:#000;border:none;font-weight:600;}}
+.cp:hover{{opacity:.85;}}
+#fl{{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .1s;}}
+</style></head><body>
+<div id="w">
+  <video id="v" autoplay playsinline muted></video>
+  <div class="corner tl"></div><div class="corner tr"></div>
+  <div class="corner bl"></div><div class="corner br"></div>
+  <div id="hud"><div id="ldot"></div><span id="hs">OFFLINE</span></div>
+  <div id="off"><div id="off-i">📷</div>
+    <div style="font-size:.8rem;">Press Start — uses your device camera</div></div>
+  <div id="fl"></div>
+  <div id="bar">
+    <button class="cb cp" id="bs" onclick="go()">▶ Start</button>
+    <button class="cb" id="bsn" onclick="snap()" style="display:none">📸 Capture</button>
+    <button class="cb" id="bst" onclick="stp()" style="display:none">■ Stop</button>
+    <button class="cb" id="bfl" onclick="flp()" style="display:none">🔄 Flip</button>
+  </div>
+</div>
+<script>
+let s=null,f='environment';
+async function go(){{
+  try{{
+    s=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:f,width:{{ideal:1280}},height:{{ideal:720}}}},audio:false}});
+    document.getElementById('v').srcObject=s;
+    document.getElementById('off').style.display='none';
+    document.getElementById('ldot').style.display='block';
+    document.getElementById('hs').textContent='LIVE';
+    document.getElementById('bs').style.display='none';
+    ['bsn','bst','bfl'].forEach(x=>document.getElementById(x).style.display='block');
+  }}catch(e){{
+    document.getElementById('off').innerHTML='<div style="font-size:.8rem;color:#555;">Camera denied — allow in browser</div>';
+  }}
+}}
+function stp(){{
+  if(s){{s.getTracks().forEach(t=>t.stop());s=null;}}
+  document.getElementById('v').srcObject=null;
+  document.getElementById('off').style.display='flex';
+  document.getElementById('ldot').style.display='none';
+  document.getElementById('hs').textContent='OFFLINE';
+  document.getElementById('bs').style.display='block';
+  ['bsn','bst','bfl'].forEach(x=>document.getElementById(x).style.display='none');
+}}
+async function flp(){{f=f==='environment'?'user':'environment';if(s)s.getTracks().forEach(t=>t.stop());await go();}}
+function snap(){{
+  const v=document.getElementById('v');
+  const c=document.createElement('canvas');
+  c.width=v.videoWidth||640;c.height=v.videoHeight||480;
+  c.getContext('2d').drawImage(v,0,0);
+  document.getElementById('fl').style.opacity='.6';
+  setTimeout(()=>document.getElementById('fl').style.opacity='0',100);
+  try{{window.parent.postMessage({{type:'friday_snap',data:c.toDataURL('image/jpeg',.85)}},'*');}}catch(e){{}}
+}}
+</script></body></html>"""
 
-    # Strip data URL prefix
-    if "," in image_b64:
-        image_b64 = image_b64.split(",", 1)[1]
-
-    prompt = question if question.strip() else VISION_PROMPT
-
-    try:
-        client = Groq(api_key=key)
-        r = client.chat.completions.create(
-            model=st.session_state.vision_model,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "image_url",
-                     "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                    {"type": "text", "text": prompt}
-                ]
-            }],
-            max_tokens=400
-        )
-        result = r.choices[0].message.content.strip()
-        # Extract first line as detected label
-        first_line = result.split("\n")[0][:60]
-        st.session_state.detected = first_line
-        return result
-    except Exception as e:
-        return f"Vision error: {e}"
-
-# ════════════════════════════════════════════════════════════════
-#AI  ← swap LLM provider here
-# ════════════════════════════════════════════════════════════════
+# ════════════════════════════════════════════════════════
+# AI FUNCTIONS
+# ════════════════════════════════════════════════════════
 def ask_ai(query: str, kb_ctx: str = "", cam_ctx: str = "") -> str:
-    """
-    Core LLM call. Swap provider by changing this function.
-    kb_ctx:  text from RAG knowledge base
-    cam_ctx: recent camera analysis
-    """
     key = st.session_state.groq_key
     if not key:
-        return "Add your Groq API key in ⚙ Settings (top-right gear icon)."
+        return "Add your Groq API key in Settings (top-right ⚙)."
     if not GROQ_OK:
-        return "Install groq: pip install groq"
-
+        return "groq package not installed."
     sys = st.session_state.sys_prompt.format(
-        time=datetime.now().strftime("%I:%M %p, %A %d %B %Y")
-    )
+        time=datetime.now().strftime("%I:%M %p, %A %d %B %Y"))
     if kb_ctx:
         sys += f"\n\n[Knowledge Base]\n{kb_ctx}"
     if cam_ctx:
-        sys += f"\n\n[Camera just saw: {cam_ctx[:300]}]"
-
+        sys += f"\n\n[Camera just saw]\n{cam_ctx[:300]}"
     history = [{"role": m["role"], "content": m["content"]}
                for m in st.session_state.messages[-12:]]
-
     try:
-        client = Groq(api_key=key)
-        r = client.chat.completions.create(
+        r = Groq(api_key=key).chat.completions.create(
             model=st.session_state.chat_model,
-            messages=[{"role": "system", "content": sys}] + history +
-                     [{"role": "user", "content": query}],
-            max_tokens=500, temperature=0.7
-        )
+            messages=[{"role":"system","content":sys}] + history +
+                     [{"role":"user","content":query}],
+            max_tokens=500, temperature=0.7)
         return r.choices[0].message.content.strip()
     except Exception as e:
         return f"Error: {e}"
 
-# ════════════════════════════════════════════════════════════════
-#RAG  ← knowledge ingestion
-# ════════════════════════════════════════════════════════════════
+def analyse_image(b64: str, question: str = "") -> str:
+    key = st.session_state.groq_key
+    if not key:
+        return "Add your Groq API key in Settings."
+    if "," in b64:
+        b64 = b64.split(",", 1)[1]
+    try:
+        r = Groq(api_key=key).chat.completions.create(
+            model=st.session_state.vision_model,
+            messages=[{"role":"user","content":[
+                {"type":"image_url","image_url":{"url":f"data:image/jpeg;base64,{b64}"}},
+                {"type":"text","text": question.strip() or VISION_PROMPT}
+            ]}], max_tokens=400)
+        result = r.choices[0].message.content.strip()
+        st.session_state.cam_analysis = result
+        return result
+    except Exception as e:
+        return f"Vision error: {e}"
+
+# ════════════════════════════════════════════════════════
+# RAG FUNCTIONS
+# ════════════════════════════════════════════════════════
 @st.cache_resource(show_spinner=False)
-def load_embeddings():
+def load_emb():
     if not RAG_OK:
         return None
     try:
-        return HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2"
-        )
+        return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
     except:
         return None
 
-def rag_query(q: str) -> str:
+def rag_q(q: str) -> str:
     vs = st.session_state.vectorstore
     if not vs:
         return ""
     try:
-        docs = vs.similarity_search(q, k=CFG.RAG_TOP_K)
-        return "\n\n".join(d.page_content for d in docs)
+        return "\n\n".join(d.page_content for d in vs.similarity_search(q, k=3))
     except:
         return ""
 
 def ingest_pdf(f) -> dict:
     if not RAG_OK:
         return {"error": "Install: langchain-huggingface faiss-cpu pypdf"}
-    path = CFG.UPLOAD_DIR / f.name
-    path.write_bytes(f.getbuffer())
+    p = Path("uploads") / f.name
+    p.write_bytes(f.getbuffer())
     try:
-        pages = PyPDFLoader(str(path)).load()
+        pages = PyPDFLoader(str(p)).load()
         docs  = RecursiveCharacterTextSplitter(
-            chunk_size=CFG.CHUNK_SIZE, chunk_overlap=CFG.CHUNK_OVERLAP
-        ).split_documents(pages)
-        emb = load_embeddings()
+            chunk_size=800, chunk_overlap=100).split_documents(pages)
+        emb = load_emb()
         if not emb:
-            return {"error": "Embeddings failed — check sentence-transformers install"}
+            return {"error": "Embeddings failed"}
         if st.session_state.vectorstore is None:
             st.session_state.vectorstore = FAISS.from_documents(docs, emb)
         else:
@@ -806,9 +438,9 @@ def ingest_text(name: str, text: str) -> dict:
         return {"error": "RAG not available"}
     try:
         docs = RecursiveCharacterTextSplitter(
-            chunk_size=CFG.CHUNK_SIZE, chunk_overlap=CFG.CHUNK_OVERLAP
-        ).split_documents([Document(page_content=text, metadata={"source": name})])
-        emb = load_embeddings()
+            chunk_size=800, chunk_overlap=100).split_documents(
+            [Document(page_content=text, metadata={"source": name})])
+        emb = load_emb()
         if not emb:
             return {"error": "Embeddings failed"}
         if st.session_state.vectorstore is None:
@@ -819,324 +451,296 @@ def ingest_text(name: str, text: str) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
-def _add_msg(role, content, used_kb=False, used_cam=False):
+def add_msg(role, content, kb=False, cam=False):
     st.session_state.messages.append({
         "role": role, "content": content,
         "time": datetime.now().strftime("%I:%M %p"),
-        "used_kb": used_kb, "used_cam": used_cam,
-    })
+        "kb": kb, "cam": cam})
 
-# ════════════════════════════════════════════════════════════════
-#UI_MAIN  ← layout starts here
-# ════════════════════════════════════════════════════════════════
+def send(query: str):
+    kb  = rag_q(query)
+    cam = st.session_state.cam_analysis
+    with st.spinner(""):
+        reply = ask_ai(query, kb, cam)
+    add_msg("user",      query)
+    add_msg("assistant", reply, kb=bool(kb), cam=bool(cam))
+    speak(reply)
+    st.rerun()
 
-# ── TOP BAR ──────────────────────────────────────────────────────────────
-key_ok   = bool(st.session_state.groq_key)
-kb_count = len(st.session_state.kb_docs)
+# ════════════════════════════════════════════════════════
+# TOP BAR
+# ════════════════════════════════════════════════════════
+key_ok = bool(st.session_state.groq_key)
+kb_cnt = len(st.session_state.kb_docs)
 
-top_l, top_r = st.columns([8, 2])
-with top_l:
+tl, tr = st.columns([7, 2])
+with tl:
+    kb_pill = (f'<div class="spill"><div class="sdot sb"></div>'
+               f'{kb_cnt} doc{"s" if kb_cnt!=1 else ""}</div>') if kb_cnt else ""
+    tts_pill = ('<div class="spill"><div class="sdot sg"></div>Voice</div>'
+                if TTS_OK and st.session_state.tts_on else "")
     st.markdown(f"""
-    <div class="topbar" style="border-bottom:none;padding:10px 0 6px;">
-      <div class="logo">
-        <span class="logo-star">✦</span> Friday
-      </div>
-      <div class="topbar-right">
-        <div class="status-pill">
-          <div class="sdot {'sdot-green' if key_ok else 'sdot-grey'}"></div>
-          {'AI ready' if key_ok else 'No API key'}
+    <div class="tb" style="border:none;padding:10px 0 6px;">
+      <div class="tb-logo"><span class="tb-star">✦</span> Friday</div>
+      <div class="tb-r">
+        <div class="spill">
+          <div class="sdot {'sg' if key_ok else 'sr'}"></div>
+          {'AI ready' if key_ok else 'No key'}
         </div>
-        {"" if not kb_count else f'<div class="status-pill"><div class="sdot sdot-blue"></div>{kb_count} doc{"s" if kb_count!=1 else ""}</div>'}
+        {kb_pill}{tts_pill}
       </div>
-    </div>
-    """, unsafe_allow_html=True)
+    </div>""", unsafe_allow_html=True)
 
-with top_r:
+with tr:
     st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-    settings_btn = st.button("⚙ Settings", key="open_settings")
-    if settings_btn:
-        st.session_state["settings_open"] = not st.session_state.get("settings_open", False)
+    if st.button("⚙ Settings"):
+        st.session_state.settings_open = not st.session_state.settings_open
 
-st.markdown("<hr style='margin:0;border-color:var(--bd);'>", unsafe_allow_html=True)
+st.markdown(f"<hr style='margin:0;border:none;border-top:1px solid {T('bd')};'>",
+            unsafe_allow_html=True)
 
-# ── TWO COLUMN LAYOUT ─────────────────────────────────────────────────────
-col_cam, col_chat = st.columns([11, 10], gap="small")
+# ════════════════════════════════════════════════════════
+# MAIN LAYOUT: camera left | chat right
+# ════════════════════════════════════════════════════════
+cl, cr = st.columns([11, 10], gap="small")
 
-# ══════════════════════════════════════════
-#  LEFT: CAMERA (always on, browser-native)
-# ══════════════════════════════════════════
-with col_cam:
-    # Render the always-on browser webcam
-    st.components.v1.html(CAM_HTML, height=490, scrolling=False)
+# ── LEFT: Camera ─────────────────────────────────────────
+with cl:
+    st.components.v1.html(cam_html(T("ac")), height=472, scrolling=False)
 
-    # ── Upload photo (cloud fallback + extra use case) ───────────────────
     with st.expander("📁 Upload photo to analyse"):
         uf = st.file_uploader("img", type=["jpg","jpeg","png","webp"],
-                               label_visibility="collapsed", key="up_img")
-        uq = st.text_input("Question", placeholder="What's wrong with this plant?",
-                            key="up_q", label_visibility="visible")
-        if uf:
-            st.image(uf, use_container_width=True)
-            if st.button("✦ Analyse", key="do_analyse"):
-                b64 = base64.b64encode(uf.read()).decode()
-                with st.spinner("Analysing…"):
-                    result = analyse_image(b64, uq)
-                st.session_state.cam_analysis = result
-                _add_msg("user",      f"[Image] {uq or 'What do you see?'}", used_cam=False)
-                _add_msg("assistant", result, used_cam=True)
-                st.rerun()
+                               label_visibility="collapsed", key="uf")
+        uq = st.text_input("q2", placeholder="What is wrong with this plant?",
+                            label_visibility="collapsed", key="uq")
+        if uf and st.button("✦ Analyse photo", key="abtn"):
+            b64 = base64.b64encode(uf.read()).decode()
+            with st.spinner("Analysing…"):
+                result = analyse_image(b64, uq)
+            add_msg("user",      f"[Photo] {uq or 'Describe this image'}")
+            add_msg("assistant", result, cam=True)
+            speak(result)
+            st.rerun()
 
-# ══════════════════════════════════════════
-#  RIGHT: CHAT
-# ══════════════════════════════════════════
-with col_chat:
+# ── RIGHT: Chat ───────────────────────────────────────────
+with cr:
 
-    # ── Messages area ────────────────────────────────────────────────────
+    # Welcome screen (no messages yet)
     if not st.session_state.messages:
         st.markdown(f"""
-        <div style="padding:32px 16px 16px;text-align:center;">
-          <div style="font-size:1.6rem;font-weight:300;letter-spacing:-.02em;margin-bottom:8px;">
-            Hello, <b style="color:{T('accent')};font-weight:600;">Boss</b>
+        <div style="padding:26px 12px 10px;text-align:center;">
+          <div style="font-size:1.5rem;font-weight:300;letter-spacing:-.02em;margin-bottom:6px;">
+            Hello, <b style="color:{T('ac')};font-weight:600;">Boss</b>
           </div>
-          <div style="font-size:.84rem;color:{T('muted')};line-height:1.7;max-width:260px;margin:0 auto 16px;">
-            Start camera → capture → I'll identify objects, plants, problems and give solutions.
+          <div style="font-size:.82rem;color:{T('mu')};line-height:1.7;
+            max-width:255px;margin:0 auto 12px;">
+            Start camera → capture → I identify objects, plants, problems and help you.
           </div>
-        </div>
-        """, unsafe_allow_html=True)
+        </div>""", unsafe_allow_html=True)
 
-        # Suggestion chips as real buttons
-        c1, c2, c3 = st.columns(3)
-        suggestions = [
-            (c1, "🌿 Identify plant", "Identify this plant and tell me how to care for it."),
-            (c2, "🔍 What is this?",  "What object is this? Explain what it's used for."),
-            (c3, "⚠️ Any problems?",  "Do you see any problems, damage or issues? How to fix?"),
-        ]
-        for col, label, prompt in suggestions:
+        sc1, sc2, sc3 = st.columns(3)
+        for col, lbl, prompt in [
+            (sc1, "🌿 ID plant",    "Identify this plant and tell me how to care for it."),
+            (sc2, "⚠️ Find issues", "What problems or damage do you see? How to fix?"),
+            (sc3, "💡 Daily tip",   "Give me one practical daily life tip."),
+        ]:
             with col:
-                if st.button(label, key=f"sug_{label}", use_container_width=True):
-                    kb_ctx = rag_query(prompt)
-                    cam_ctx = st.session_state.cam_analysis
-                    with st.spinner(""):
-                        reply = ask_ai(prompt, kb_ctx, cam_ctx)
-                    _add_msg("user",      prompt)
-                    _add_msg("assistant", reply, used_kb=bool(kb_ctx), used_cam=bool(cam_ctx))
-                    st.rerun()
-    else:
-        # Message list
-        chat_c = st.container(height=380)
-        with chat_c:
-            for m in st.session_state.messages:
-                kb_b  = f'<span class="kb-badge">KB</span>'  if m.get("used_kb")  else ""
-                cam_b = f'<span class="cam-badge">CAM</span>' if m.get("used_cam") else ""
-                t_str = m.get("time","")
+                if st.button(lbl, key=f"s_{lbl}", use_container_width=True):
+                    send(prompt)
 
+    else:
+        # Messages list
+        chat_box = st.container(height=355)
+        with chat_box:
+            for m in st.session_state.messages:
+                kb_b  = '<span class="kb">KB</span>'   if m.get("kb")  else ""
+                cam_b = '<span class="cb2">CAM</span>' if m.get("cam") else ""
                 if m["role"] == "user":
                     st.markdown(f"""
-                    <div class="msg-user" style="margin:4px 0;">
-                      <div class="bub bub-user">{m['content']}
-                        <div class="bub-meta">{t_str}</div>
+                    <div class="mu">
+                      <div class="bu bu-u">{m['content']}
+                        <div class="bm">{m.get('time','')}</div>
                       </div>
                     </div>""", unsafe_allow_html=True)
                 else:
                     st.markdown(f"""
-                    <div class="msg-ai" style="margin:4px 0;">
+                    <div class="ma">
                       <div class="av">✦</div>
-                      <div class="bub bub-ai">{m['content']}{kb_b}{cam_b}
-                        <div class="bub-meta">{t_str}</div>
+                      <div class="bu bu-a">{m['content']}{kb_b}{cam_b}
+                        <div class="bm">{m.get('time','')}</div>
                       </div>
                     </div>""", unsafe_allow_html=True)
 
-    # ── Input bar ─────────────────────────────────────────────────────────
-    st.markdown(f"""
-    <div style="height:1px;background:var(--bd);margin:4px 0;"></div>
-    """, unsafe_allow_html=True)
+    # Voice mic
+    st.components.v1.html(VOICE_HTML, height=78, scrolling=False)
 
-    with st.form("chat_form", clear_on_submit=True):
-        fc1, fc2 = st.columns([10, 2])
-        with fc1:
-            user_msg = st.text_input("m", placeholder="Ask Friday anything…",
-                                      label_visibility="collapsed")
-        with fc2:
+    # Text input + send
+    with st.form("cf", clear_on_submit=True):
+        c1, c2 = st.columns([9, 2])
+        with c1:
+            msg = st.text_input("m",
+                placeholder="Speak above or type here…",
+                label_visibility="collapsed")
+        with c2:
             sent = st.form_submit_button("Send", use_container_width=True)
 
-    if sent and user_msg.strip():
-        q      = user_msg.strip()
-        kb_ctx = rag_query(q)
-        cam_ctx = st.session_state.cam_analysis
-        with st.spinner(""):
-            reply = ask_ai(q, kb_ctx, cam_ctx)
-        _add_msg("user",      q)
-        _add_msg("assistant", reply, used_kb=bool(kb_ctx), used_cam=bool(cam_ctx))
-        st.rerun()
+    if sent and msg.strip():
+        send(msg.strip())
 
-    # Quick action row
-    qa1, qa2, qa3, qa4 = st.columns(4)
-    quick = [
-        (qa1, "🕐 Time",    "What time and date is it?"),
-        (qa2, "🌤 Weather", "What's the weather like today?"),
-        (qa3, "💡 Tip",     "Give me one useful daily life tip."),
-        (qa4, "🗑 Clear",   None),
-    ]
-    for col, label, prompt in quick:
+    # Quick buttons row
+    q1, q2, q3, q4 = st.columns(4)
+    for col, lbl, prompt in [
+        (q1, "🕐 Time",    "What time and date is it?"),
+        (q2, "🌤 Weather", "What is the weather today?"),
+        (q3, "😂 Joke",    "Tell me a funny short joke."),
+        (q4, "🗑 Clear",   None),
+    ]:
         with col:
-            if st.button(label, key=f"q_{label}", use_container_width=True):
-                if prompt is None:
+            if st.button(lbl, key=f"q_{lbl}", use_container_width=True):
+                if prompt:
+                    send(prompt)
+                else:
                     st.session_state.messages = []
                     st.session_state.cam_analysis = ""
                     st.rerun()
-                else:
-                    kb_ctx = rag_query(prompt)
-                    reply  = ask_ai(prompt, kb_ctx)
-                    _add_msg("user", prompt)
-                    _add_msg("assistant", reply, used_kb=bool(kb_ctx))
-                    st.rerun()
 
-# ════════════════════════════════════════════════════════════════
-#UI_SIDEBAR  ← Settings panel
-# ════════════════════════════════════════════════════════════════
-if st.session_state.get("settings_open"):
+# ════════════════════════════════════════════════════════
+# SETTINGS SIDEBAR
+# ════════════════════════════════════════════════════════
+if st.session_state.settings_open:
     with st.sidebar:
-        st.markdown(f"### ⚙️ Settings")
-        st.markdown("---")
+        st.markdown("### ⚙️ Settings")
+        st.divider()
 
-        # ── THEME ─────────────────────────────────────────────────────────
+        # Theme
         st.markdown("**Theme**")
-        theme_cols = st.columns(len(THEMES))
-        for i, (tname, tdata) in enumerate(THEMES.items()):
-            with theme_cols[i]:
-                is_active = st.session_state.theme_name == tname
-                border = f"2px solid {tdata['accent']}" if is_active else "2px solid transparent"
+        tcols = st.columns(len(THEMES))
+        for i, (tn, td) in enumerate(THEMES.items()):
+            with tcols[i]:
+                active = st.session_state.theme == tn
+                bdr = f"2px solid {td['ac']}" if active else "2px solid transparent"
                 st.markdown(f"""
-                <div style="width:100%;aspect-ratio:1;border-radius:8px;
-                  background:linear-gradient(135deg,{tdata['bg']},{tdata['surface']});
-                  border:{border};cursor:pointer;position:relative;
+                <div style="aspect-ratio:1;border-radius:8px;border:{bdr};
+                  background:linear-gradient(135deg,{td['bg']},{td['sf']});
                   display:flex;align-items:center;justify-content:center;">
-                  <div style="width:8px;height:8px;border-radius:50%;
-                    background:{tdata['accent']};"></div>
+                  <div style="width:7px;height:7px;border-radius:50%;background:{td['ac']};"></div>
                 </div>
-                <div style="font-size:.6rem;color:{'#fff' if is_active else '#666'};
-                  text-align:center;margin-top:3px;">{tname}</div>
-                """, unsafe_allow_html=True)
-                if st.button("  ", key=f"th_{tname}", use_container_width=True,
-                             help=tname):
-                    st.session_state.theme_name = tname
+                <div style="font-size:.57rem;color:{'#fff' if active else '#555'};
+                  text-align:center;margin-top:2px;">{tn}</div>""",
+                unsafe_allow_html=True)
+                if st.button("·", key=f"t_{tn}", use_container_width=True, help=tn):
+                    st.session_state.theme = tn
                     st.rerun()
 
-        st.markdown("---")
+        st.divider()
 
-        # ── API KEY ───────────────────────────────────────────────────────
+        # Voice
+        st.markdown("**Voice — Friday speaks**")
+        st.session_state.tts_on = st.toggle(
+            "Speak replies aloud", value=st.session_state.tts_on)
+        if not TTS_OK:
+            st.caption("Add `edge-tts` to requirements.txt to enable")
+
+        st.divider()
+
+        # API Key
         st.markdown("**Groq API Key**")
-        new_key = st.text_input("key", value=st.session_state.groq_key,
-                                 placeholder="gsk_…", type="password",
-                                 label_visibility="collapsed")
-        if new_key != st.session_state.groq_key:
-            st.session_state.groq_key = new_key
+        nk = st.text_input("k", value=st.session_state.groq_key,
+                            placeholder="gsk_…", type="password",
+                            label_visibility="collapsed")
+        if nk != st.session_state.groq_key:
+            st.session_state.groq_key = nk
             st.success("✓ Key saved")
         st.caption("[Get free key → console.groq.com](https://console.groq.com)")
 
-        st.markdown("---")
+        st.divider()
 
-        # ── MODELS ────────────────────────────────────────────────────────
+        # Models
         st.markdown("**Chat Model**")
-        cm_idx = CFG.CHAT_MODELS.index(st.session_state.chat_model) \
-                 if st.session_state.chat_model in CFG.CHAT_MODELS else 0
+        idx = CHAT_MODELS.index(st.session_state.chat_model) \
+              if st.session_state.chat_model in CHAT_MODELS else 0
         st.session_state.chat_model = st.selectbox(
-            "cm", CFG.CHAT_MODELS, index=cm_idx, label_visibility="collapsed"
-        )
+            "cm", CHAT_MODELS, index=idx, label_visibility="collapsed")
 
         st.markdown("**Vision Model**")
-        vm_idx = CFG.VISION_MODELS.index(st.session_state.vision_model) \
-                 if st.session_state.vision_model in CFG.VISION_MODELS else 0
+        idx2 = VISION_MODELS.index(st.session_state.vision_model) \
+               if st.session_state.vision_model in VISION_MODELS else 0
         st.session_state.vision_model = st.selectbox(
-            "vm", CFG.VISION_MODELS, index=vm_idx, label_visibility="collapsed"
-        )
+            "vm", VISION_MODELS, index=idx2, label_visibility="collapsed")
 
-        st.markdown("---")
+        st.divider()
 
-        # ── KNOWLEDGE BASE ────────────────────────────────────────────────
+        # Knowledge Base
         st.markdown("**Knowledge Base**")
-
-        uploaded_pdf = st.file_uploader("Upload PDF", type=["pdf"],
-                                         label_visibility="collapsed")
-        if uploaded_pdf:
-            if not any(d["name"] == uploaded_pdf.name for d in st.session_state.kb_docs):
-                with st.spinner("Processing PDF…"):
-                    result = ingest_pdf(uploaded_pdf)
-                if "error" in result:
-                    st.error(result["error"])
-                else:
-                    st.session_state.kb_docs.append({
-                        "name": uploaded_pdf.name,
-                        "type": "pdf",
-                        "pages": result["pages"],
-                    })
-                    st.success(f"✓ {result['pages']} pages · {result['chunks']} chunks")
+        pdf = st.file_uploader("PDF", type=["pdf"],
+                                label_visibility="collapsed", key="pdf_up")
+        if pdf and not any(d["name"] == pdf.name for d in st.session_state.kb_docs):
+            with st.spinner("Processing…"):
+                r = ingest_pdf(pdf)
+            if "error" in r:
+                st.error(r["error"])
+            else:
+                st.session_state.kb_docs.append({
+                    "name": pdf.name, "type": "pdf", "pages": r["pages"]})
+                st.success(f"✓ {r['pages']}p · {r['chunks']} chunks")
 
         with st.expander("📝 Add text / notes"):
-            txt_title = st.text_input("Title", placeholder="My notes", key="txt_t")
-            txt_body  = st.text_area("Content", placeholder="Paste text here…",
-                                      height=100, key="txt_b")
-            if st.button("Add to KB", use_container_width=True, key="add_txt"):
-                if txt_body.strip():
+            tt = st.text_input("Title", placeholder="My notes", key="tt")
+            tb = st.text_area("Content", placeholder="Paste any text…",
+                               height=90, key="tb")
+            if st.button("Add to KB", use_container_width=True, key="tadd"):
+                if tb.strip():
                     with st.spinner("Adding…"):
-                        r = ingest_text(txt_title or "Notes", txt_body)
+                        r = ingest_text(tt or "Notes", tb)
                     if "error" in r:
                         st.error(r["error"])
                     else:
                         st.session_state.kb_docs.append({
-                            "name": txt_title or "Notes",
-                            "type": "text",
-                            "chunks": r["chunks"],
-                        })
+                            "name": tt or "Notes", "type": "text",
+                            "chunks": r["chunks"]})
                         st.success(f"✓ {r['chunks']} chunks added")
 
-        # Doc list
         if st.session_state.kb_docs:
             st.markdown(f"**{len(st.session_state.kb_docs)} documents**")
             for i, d in enumerate(st.session_state.kb_docs):
-                dc1, dc2 = st.columns([5, 1])
-                with dc1:
-                    icon = "📄" if d["type"] == "pdf" else "📝"
-                    info = f"{d.get('pages','?')}p" if d["type"]=="pdf" else f"{d.get('chunks','?')} chunks"
+                c1, c2 = st.columns([5, 1])
+                with c1:
+                    ico = "📄" if d["type"] == "pdf" else "📝"
+                    inf = (f"{d.get('pages','?')}p" if d["type"] == "pdf"
+                           else f"{d.get('chunks','?')} chunks")
                     st.markdown(
-                        f"<div style='font-size:.76rem;color:var(--tx);'>{icon} {d['name']}</div>"
-                        f"<div style='font-size:.62rem;color:var(--mu);'>{info}</div>",
-                        unsafe_allow_html=True
-                    )
-                with dc2:
-                    if st.button("✕", key=f"rm_{i}", help="Remove"):
+                        f"<div style='font-size:.74rem;'>{ico} {d['name']}</div>"
+                        f"<div style='font-size:.6rem;color:var(--mu);'>{inf}</div>",
+                        unsafe_allow_html=True)
+                with c2:
+                    if st.button("✕", key=f"rm{i}"):
                         st.session_state.kb_docs.pop(i)
                         st.rerun()
-            if st.button("🗑 Clear all KB", use_container_width=True, key="clr_kb"):
-                st.session_state.kb_docs = []
-                st.session_state.vectorstore = None
-                st.rerun()
 
-        st.markdown("---")
+        st.divider()
 
-        # ── SYSTEM PROMPT ─────────────────────────────────────────────────
+        # Personality
         with st.expander("✏️ Friday's personality"):
-            new_p = st.text_area("Prompt", value=st.session_state.sys_prompt,
-                                  height=140, label_visibility="collapsed")
-            if st.button("Save", key="save_p", use_container_width=True):
-                st.session_state.sys_prompt = new_p
+            np = st.text_area("p", value=st.session_state.sys_prompt,
+                               height=130, label_visibility="collapsed")
+            if st.button("Save", key="sp", use_container_width=True):
+                st.session_state.sys_prompt = np
                 st.success("Saved!")
 
-        st.markdown("---")
+        st.divider()
 
-        # ── DANGER ZONE ───────────────────────────────────────────────────
         with st.expander("🗑 Reset"):
-            if st.button("Clear Chat", use_container_width=True, key="clr_chat"):
+            if st.button("Clear chat", use_container_width=True, key="cc"):
                 st.session_state.messages = []
                 st.rerun()
-            if st.button("Reset Everything", use_container_width=True, key="rst_all"):
-                for k in ["messages","kb_docs","vectorstore","cam_analysis","detected"]:
-                    st.session_state[k] = [] if k in ["messages","kb_docs"] else None \
-                        if k == "vectorstore" else ""
+            if st.button("Reset all", use_container_width=True, key="ra"):
+                for k in ["messages", "kb_docs"]:
+                    st.session_state[k] = []
+                st.session_state.vectorstore = None
+                st.session_state.cam_analysis = ""
                 st.rerun()
 
         st.markdown(
-            f"<div style='font-size:.6rem;color:var(--mu);text-align:center;margin-top:12px;'>"
-            f"Friday v5.0 · Theme: {st.session_state.theme_name}</div>",
-            unsafe_allow_html=True
-        )
+            f"<div style='font-size:.58rem;color:var(--mu);text-align:center;margin-top:10px;'>"
+            f"Friday v6.0 · {st.session_state.theme}</div>",
+            unsafe_allow_html=True)
