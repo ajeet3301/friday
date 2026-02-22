@@ -1,11 +1,9 @@
 """
-╔══════════════════════════════════════════════════════════════╗
-║        FRIDAY AI DASHBOARD — Streamlit Edition               ║
-║  Run: streamlit run main.py                                  ║
-╚══════════════════════════════════════════════════════════════╝
+FRIDAY AI — Gemini-style clean UI
+Run: streamlit run main.py
 """
 
-import os, time, json, shutil
+import os, base64, time
 from datetime import datetime
 from pathlib import Path
 
@@ -14,7 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Optional imports (graceful fallback) ──────────────────────────────────
+# ── Optional imports ──────────────────────────────────────────────────────
 try:
     from groq import Groq
     GROQ_OK = True
@@ -31,641 +29,745 @@ except ImportError:
     RAG_OK = False
 
 try:
-    import cv2
-    import numpy as np
+    import cv2, numpy as np
     CAM_OK = True
 except ImportError:
     CAM_OK = False
 
-# ═══════════════════════════════════════════════════════════════════════════
-# CONFIG
-# ═══════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────
+# DIRS
+# ─────────────────────────────────────────────────────────────────────────
+Path("uploads").mkdir(exist_ok=True)
+Path("knowledge_base").mkdir(exist_ok=True)
 
-GROQ_API_KEY  = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL    = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-KB_DIR        = Path("knowledge_base")
-UPLOAD_DIR    = Path("uploads")
-KB_DIR.mkdir(exist_ok=True)
-UPLOAD_DIR.mkdir(exist_ok=True)
-
-SYSTEM_PROMPT = """You are Friday, an advanced AI assistant inspired by Iron Man's JARVIS.
-Be helpful, witty, and concise. Keep responses under 3 sentences unless detail is needed.
-Address the user as "Boss" occasionally. Never say you can't do things.
-Current time: {time}"""
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PAGE CONFIG & THEME
-# ═══════════════════════════════════════════════════════════════════════════
-
+# ─────────────────────────────────────────────────────────────────────────
+# PAGE CONFIG
+# ─────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="FRIDAY AI",
-    page_icon="⚡",
+    page_title="Friday",
+    page_icon="✦",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
-# ── Custom CSS ─────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# CSS  — Gemini-inspired: white/soft bg, minimal, large camera, bottom bar
+# ─────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Mono&display=swap');
+/* fallback if Google Sans not available */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono&display=swap');
 
-/* Global */
-html, body, [class*="css"] { font-family: 'Space Mono', monospace; }
-.stApp { background: #0a0f1a; }
+:root {
+  --bg:       #0f0f0f;
+  --surface:  #1c1c1c;
+  --surface2: #242424;
+  --border:   rgba(255,255,255,.08);
+  --text:     #e8eaed;
+  --muted:    #9aa0a6;
+  --accent:   #8ab4f8;
+  --red:      #f28b82;
+  --green:    #81c995;
+  --sans:     'DM Sans', 'Google Sans', sans-serif;
+  --mono:     'DM Mono', 'Google Sans Mono', monospace;
+}
 
-/* Hide default Streamlit chrome */
+html, body, [class*="css"] {
+  font-family: var(--sans) !important;
+  background: var(--bg) !important;
+  color: var(--text) !important;
+}
+
+/* Hide streamlit chrome */
 #MainMenu, footer, header { visibility: hidden; }
-.block-container { padding-top: 1rem; padding-bottom: 1rem; }
+.block-container { padding: 0 !important; max-width: 100% !important; }
+section[data-testid="stSidebar"] { display: none !important; }
 
-/* ── TOP BANNER ── */
-.friday-header {
-    background: linear-gradient(135deg, #0f1729 0%, #111827 100%);
-    border: 1px solid rgba(0,229,255,.15);
-    border-radius: 10px;
-    padding: 1rem 1.5rem;
-    margin-bottom: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+/* ── TOP NAV ── */
+.top-nav {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  position: sticky; top: 0; z-index: 100;
 }
-.friday-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 1.6rem;
-    font-weight: 800;
-    color: #00e5ff;
-    letter-spacing: .2em;
-    margin: 0;
+.nav-logo {
+  font-size: 1.1rem; font-weight: 600; color: var(--text);
+  display: flex; align-items: center; gap: 8px; letter-spacing: -.01em;
 }
-.friday-sub { color: #64748b; font-size: .7rem; letter-spacing: .1em; margin-top:.2rem; }
+.nav-logo span { color: var(--accent); }
+.nav-pills { display: flex; gap: 6px; }
+.nav-pill {
+  padding: 6px 14px; border-radius: 20px; font-size: .8rem;
+  border: 1px solid var(--border); color: var(--muted);
+  cursor: pointer; transition: .15s; background: transparent;
+  font-family: var(--sans);
+}
+.nav-pill:hover, .nav-pill.active {
+  background: var(--surface2); color: var(--text);
+  border-color: rgba(255,255,255,.15);
+}
+.nav-right { display: flex; align-items: center; gap: 10px; }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; margin-right: 4px;
+}
+.dot-green { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.dot-grey  { background: #5f6368; }
+.dot-blue  { background: var(--accent); box-shadow: 0 0 6px var(--accent); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
 
-/* ── STATUS BADGES ── */
-.badge-row { display:flex; gap:.6rem; flex-wrap:wrap; margin-bottom:.75rem; }
-.badge {
-    font-size: .65rem; padding: .28rem .7rem; border-radius: 20px;
-    border: 1px solid; letter-spacing: .08em; display: inline-flex;
-    align-items: center; gap: .35rem;
-}
-.badge-on  { color:#22c55e; border-color:rgba(34,197,94,.35); background:rgba(34,197,94,.08); }
-.badge-off { color:#64748b; border-color:rgba(100,116,139,.2); background:rgba(100,116,139,.05); }
-.badge-warn{ color:#f59e0b; border-color:rgba(245,158,11,.3); background:rgba(245,158,11,.06); }
-.dot { width:6px;height:6px;border-radius:50%;display:inline-block; }
-.dot-on   { background:#22c55e; box-shadow:0 0 5px #22c55e; }
-.dot-off  { background:#64748b; }
-.dot-warn { background:#f59e0b; box-shadow:0 0 5px #f59e0b; }
-
-/* ── PANELS ── */
-.panel {
-    background: #111827;
-    border: 1px solid rgba(0,229,255,.12);
-    border-radius: 10px;
-    padding: 1rem;
-    margin-bottom: .75rem;
-    position: relative;
-}
-.panel-title {
-    font-size: .7rem; color: #64748b;
-    letter-spacing: .12em; margin-bottom: .75rem;
-    border-bottom: 1px solid rgba(255,255,255,.05);
-    padding-bottom: .5rem;
+/* ── MAIN BODY ── */
+.main-body {
+  display: flex;
+  height: calc(100vh - 57px);
+  overflow: hidden;
 }
 
-/* ── CHAT BUBBLES ── */
-.msg-user {
-    background: rgba(124,58,237,.2);
-    border: 1px solid rgba(124,58,237,.3);
-    border-radius: 10px 10px 2px 10px;
-    padding: .6rem .9rem;
-    margin: .35rem 0;
-    text-align: right;
-    color: #e2e8f0;
-    font-size: .82rem;
+/* ── LEFT PANEL: CAMERA ── */
+.cam-panel {
+  width: 55%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: #000;
+  position: relative;
 }
-.msg-ai {
-    background: rgba(0,229,255,.07);
-    border: 1px solid rgba(0,229,255,.15);
-    border-radius: 10px 10px 10px 2px;
-    padding: .6rem .9rem;
-    margin: .35rem 0;
-    color: #e2e8f0;
-    font-size: .82rem;
+.cam-feed {
+  flex: 1;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  position: relative;
 }
-.msg-meta { font-size: .6rem; color: #475569; margin-top:.25rem; }
-.kb-used { font-size:.6rem; color:#a78bfa;
-    background:rgba(124,58,237,.15); border:1px solid rgba(124,58,237,.25);
-    border-radius:8px; padding:.1rem .4rem; margin-left:.4rem; }
+.cam-feed img { width: 100%; height: 100%; object-fit: cover; }
+.cam-offline {
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  color: #5f6368; font-size: .85rem;
+}
+.cam-offline-icon { font-size: 3rem; opacity: .3; }
 
-/* ── STAT CARDS ── */
-.stat-grid { display:grid; grid-template-columns:1fr 1fr; gap:.6rem; }
-.stat-card {
-    background: rgba(255,255,255,.03);
-    border: 1px solid rgba(0,229,255,.1);
-    border-radius: 8px; padding: .7rem;
+/* Detection overlay */
+.detect-overlay {
+  position: absolute; bottom: 16px; left: 16px;
+  background: rgba(0,0,0,.7); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 8px; padding: 8px 14px;
+  font-size: .78rem; color: var(--text);
+  font-family: var(--mono);
 }
-.stat-label { font-size:.58rem; color:#64748b; letter-spacing:.1em; margin-bottom:.3rem; }
-.stat-val { font-size:1rem; font-weight:700; color:#00e5ff; }
-.stat-val-muted { font-size:.8rem; font-weight:600; color:#94a3b8; }
+.detect-label { color: var(--accent); font-size: .7rem; margin-bottom: 2px; }
 
-/* ── SIDEBAR ── */
-section[data-testid="stSidebar"] {
-    background: #0d1420 !important;
-    border-right: 1px solid rgba(0,229,255,.1);
+/* Cam controls bar */
+.cam-bar {
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 10px;
+  border-top: 1px solid var(--border);
+  background: rgba(0,0,0,.4);
 }
-section[data-testid="stSidebar"] .stMarkdown p { color:#94a3b8; font-size:.8rem; }
-
-/* ── INPUTS ── */
-.stTextInput>div>div>input, .stTextArea>div>div>textarea {
-    background: rgba(255,255,255,.04) !important;
-    border: 1px solid rgba(0,229,255,.2) !important;
-    border-radius: 8px !important;
-    color: #e2e8f0 !important;
-    font-family: 'Space Mono', monospace !important;
+.cam-btn {
+  padding: 8px 18px; border-radius: 20px; font-size: .78rem;
+  border: 1px solid var(--border); color: var(--muted);
+  background: var(--surface); cursor: pointer;
+  font-family: var(--sans); transition: .15s; white-space: nowrap;
 }
-.stTextInput>div>div>input:focus, .stTextArea>div>div>textarea:focus {
-    border-color: rgba(0,229,255,.5) !important;
-    box-shadow: 0 0 0 2px rgba(0,229,255,.1) !important;
+.cam-btn:hover { background: var(--surface2); color: var(--text); }
+.cam-btn.primary {
+  background: var(--accent); color: #000;
+  border-color: transparent; font-weight: 500;
+}
+.cam-btn.primary:hover { opacity: .9; }
+
+/* ── RIGHT PANEL: CHAT ── */
+.chat-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+/* Welcome state */
+.welcome {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; flex: 1; gap: 8px; padding: 40px;
+  text-align: center;
+}
+.welcome-title { font-size: 1.6rem; font-weight: 300; color: var(--text); }
+.welcome-title b { color: var(--accent); font-weight: 600; }
+.welcome-sub { font-size: .85rem; color: var(--muted); max-width: 300px; line-height: 1.6; }
+.suggestion-chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+.chip {
+  padding: 8px 16px; border-radius: 20px; font-size: .8rem;
+  border: 1px solid var(--border); color: var(--muted);
+  cursor: pointer; transition: .15s;
+}
+.chip:hover { background: var(--surface2); color: var(--text); border-color: rgba(255,255,255,.2); }
+
+/* Messages */
+.msg-row { display: flex; gap: 10px; align-items: flex-start; }
+.msg-row.user { flex-direction: row-reverse; }
+.avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: .75rem; flex-shrink: 0; margin-top: 2px;
+}
+.avatar-ai  { background: var(--surface2); color: var(--accent); border: 1px solid var(--border); }
+.avatar-usr { background: #444; color: var(--text); }
+.bubble {
+  max-width: 78%;
+  padding: 10px 14px;
+  border-radius: 18px;
+  font-size: .85rem;
+  line-height: 1.6;
+}
+.bubble-ai  { background: var(--surface); border-radius: 4px 18px 18px 18px; }
+.bubble-usr { background: var(--surface2); border-radius: 18px 4px 18px 18px; }
+.bubble-meta { font-size: .62rem; color: #5f6368; margin-top: 4px; }
+.kb-chip {
+  display: inline-block; font-size: .62rem; padding: 1px 6px;
+  background: rgba(138,180,248,.1); border: 1px solid rgba(138,180,248,.25);
+  border-radius: 8px; color: var(--accent); margin-left: 6px; vertical-align: middle;
+}
+.typing { display: flex; gap: 5px; padding: 12px 16px; }
+.typing span {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+  animation: bounce .9s infinite;
+}
+.typing span:nth-child(2){ animation-delay:.15s; }
+.typing span:nth-child(3){ animation-delay:.3s; }
+@keyframes bounce { 0%,100%{transform:translateY(0);opacity:.4} 50%{transform:translateY(-5px);opacity:1} }
+
+/* ── BOTTOM INPUT BAR ── */
+.input-area {
+  padding: 14px 20px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+}
+.input-wrap {
+  display: flex; align-items: flex-end; gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 8px 8px 8px 16px;
+  transition: .2s;
+}
+.input-wrap:focus-within {
+  border-color: rgba(138,180,248,.4);
+  box-shadow: 0 0 0 3px rgba(138,180,248,.07);
 }
 
-/* ── BUTTONS ── */
-.stButton>button {
-    background: rgba(0,229,255,.1) !important;
-    border: 1px solid rgba(0,229,255,.3) !important;
-    color: #00e5ff !important;
-    border-radius: 7px !important;
-    font-family: 'Space Mono', monospace !important;
-    font-size: .72rem !important;
-    letter-spacing: .06em !important;
-    transition: .2s !important;
+/* Streamlit overrides for inputs */
+.stTextInput > div > div > input {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--text) !important;
+  font-family: var(--sans) !important;
+  font-size: .9rem !important;
+  padding: 4px 0 !important;
 }
-.stButton>button:hover {
-    background: rgba(0,229,255,.2) !important;
-    border-color: rgba(0,229,255,.5) !important;
+.stButton > button {
+  background: var(--accent) !important;
+  color: #000 !important;
+  border: none !important;
+  border-radius: 20px !important;
+  font-family: var(--sans) !important;
+  font-weight: 500 !important;
+  padding: 8px 20px !important;
+  font-size: .8rem !important;
+  transition: .15s !important;
 }
+.stButton > button:hover { opacity: .9 !important; }
 
-/* ── FILE UPLOADER ── */
-.stFileUploader>div { border-radius:8px; background:rgba(0,229,255,.04); }
-
-/* ── SELECTBOX ── */
-.stSelectbox>div>div {
-    background: rgba(255,255,255,.04) !important;
-    border: 1px solid rgba(0,229,255,.2) !important;
-    border-radius: 8px !important;
-    color: #e2e8f0 !important;
+/* ── SLIDE-IN PANEL (PDF upload) ── */
+.slide-panel {
+  position: fixed; right: 0; top: 57px; bottom: 0;
+  width: 320px;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  padding: 20px;
+  z-index: 200;
+  transform: translateX(100%);
+  transition: transform .25s cubic-bezier(.4,0,.2,1);
+  overflow-y: auto;
 }
-
-/* ── EXPANDER ── */
-.streamlit-expanderHeader {
-    background: rgba(255,255,255,.03) !important;
-    border: 1px solid rgba(0,229,255,.1) !important;
-    border-radius: 8px !important;
-    color: #94a3b8 !important;
-    font-size: .75rem !important;
+.slide-panel.open { transform: translateX(0); }
+.panel-header {
+  font-size: .95rem; font-weight: 600; margin-bottom: 16px;
+  display: flex; align-items: center; justify-content: space-between;
 }
-
-/* ── COLOR PICKERS ── */
-.stColorPicker>div { border-radius:8px; }
-
-/* Scrollbar */
-::-webkit-scrollbar { width:4px; }
-::-webkit-scrollbar-track { background:transparent; }
-::-webkit-scrollbar-thumb { background:rgba(0,229,255,.2); border-radius:2px; }
+.panel-close {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--surface2); border: none;
+  color: var(--muted); cursor: pointer; font-size: .9rem;
+  display: flex; align-items: center; justify-content: center;
+}
+.doc-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--surface2); margin-bottom: 8px;
+  border: 1px solid var(--border);
+}
+.doc-name { font-size: .8rem; color: var(--text); }
+.doc-meta { font-size: .68rem; color: var(--muted); margin-top: 2px; }
+.doc-del  { background: none; border: none; color: var(--muted); cursor: pointer; font-size: .85rem; }
+.doc-del:hover { color: var(--red); }
+.stFileUploader > div {
+  background: var(--surface2) !important;
+  border: 2px dashed rgba(138,180,248,.25) !important;
+  border-radius: 12px !important;
+}
+.section-label {
+  font-size: .7rem; color: var(--muted); letter-spacing: .06em;
+  text-transform: uppercase; margin-bottom: 8px; margin-top: 16px;
+}
+.api-input > div > div > input {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  color: var(--text) !important;
+  font-family: var(--mono) !important;
+  font-size: .78rem !important;
+}
+.stTextArea > div > div > textarea {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 10px !important;
+  color: var(--text) !important;
+  font-family: var(--sans) !important;
+  font-size: .82rem !important;
+}
+.save-btn > button {
+  background: var(--green) !important;
+  color: #000 !important;
+  width: 100% !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SESSION STATE INIT
-# ═══════════════════════════════════════════════════════════════════════════
-
-def init_state():
-    defaults = {
-        "chat_history":   [],
-        "vectorstore":    None,
-        "kb_docs":        [],
-        "wake_active":    False,
-        "detected_obj":   "—",
-        "groq_client":    None,
-        "theme_accent":   "#00e5ff",
-        "theme_bg":       "#0a0f1a",
-        "embeddings":     None,
+# ─────────────────────────────────────────────────────────────────────────
+# SESSION STATE
+# ─────────────────────────────────────────────────────────────────────────
+def _init():
+    d = {
+        "messages":      [],
+        "vectorstore":   None,
+        "kb_docs":       [],
+        "panel_open":    False,
+        "detected":      "Nothing",
+        "cam_frame":     None,
+        "groq_key":      os.getenv("GROQ_API_KEY", ""),
+        "groq_model":    os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+        "sys_prompt":    "You are Friday, a smart AI assistant. Be concise and helpful. Call the user Boss sometimes.",
+        "wake_on":       True,
     }
-    for k, v in defaults.items():
+    for k, v in d.items():
         if k not in st.session_state:
             st.session_state[k] = v
+_init()
 
-init_state()
-
-# ═══════════════════════════════════════════════════════════════════════════
+# ─────────────────────────────────────────────────────────────────────────
 # HELPERS
-# ═══════════════════════════════════════════════════════════════════════════
-
+# ─────────────────────────────────────────────────────────────────────────
 @st.cache_resource
-def get_groq_client():
-    if GROQ_OK and GROQ_API_KEY:
-        return Groq(api_key=GROQ_API_KEY)
-    return None
-
-@st.cache_resource
-def get_embeddings():
-    if not RAG_OK:
-        return None
+def load_embeddings():
+    if not RAG_OK: return None
     try:
         return HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-    except Exception as e:
-        st.warning(f"Embeddings error: {e}")
+    except:
         return None
 
-def badge(label, state="off", dot=True):
-    cls = {"on":"badge-on","off":"badge-off","warn":"badge-warn"}[state]
-    dcls= {"on":"dot-on","off":"dot-off","warn":"dot-warn"}[state]
-    d   = f'<span class="dot {dcls}"></span>' if dot else ""
-    return f'<span class="badge {cls}">{d}{label}</span>'
+def get_client():
+    key = st.session_state.groq_key
+    if GROQ_OK and key:
+        return Groq(api_key=key)
+    return None
 
-def now_str():
-    return datetime.now().strftime("%I:%M %p")
+def rag_query(q):
+    vs = st.session_state.vectorstore
+    if not vs: return ""
+    try:
+        docs = vs.similarity_search(q, k=3)
+        return "\n\n".join(d.page_content for d in docs)
+    except: return ""
 
-# ═══════════════════════════════════════════════════════════════════════════
-# AI BRAIN
-# ═══════════════════════════════════════════════════════════════════════════
-
-def ask_ai(query: str, kb_context: str = "") -> str:
-    """
-    ── PLUG YOUR LLM LOGIC HERE ──
-    kb_context is auto-injected from RAG when KB has documents.
-    """
-    client = get_groq_client()
+# ─────────────────────────────────────────────────────────────────────────
+# AI  — paste your logic inside ask_ai()
+# ─────────────────────────────────────────────────────────────────────────
+def ask_ai(query: str, kb_ctx: str = "", cam_desc: str = "") -> str:
+    client = get_client()
     if not client:
-        return f"[Echo] {query} — Add GROQ_API_KEY to secrets for real responses."
+        return "Please add your Groq API key in the panel on the right → click ☰"
 
-    system = SYSTEM_PROMPT.format(time=datetime.now().strftime("%I:%M %p, %A %d %B %Y"))
-    if kb_context:
-        system += f"\n\n--- Knowledge Base ---\n{kb_context}\n--- End ---"
+    sys = st.session_state.sys_prompt + \
+          f"\nTime: {datetime.now().strftime('%I:%M %p, %A %d %B %Y')}"
+    if kb_ctx:
+        sys += f"\n\n[Knowledge Base]\n{kb_ctx}"
+    if cam_desc:
+        sys += f"\n\n[Camera currently sees: {cam_desc}]"
 
     history = [{"role": m["role"], "content": m["content"]}
-               for m in st.session_state.chat_history[-8:]]
-
-    msgs = [{"role": "system", "content": system}] + history + \
-           [{"role": "user", "content": query}]
+               for m in st.session_state.messages[-10:]]
     try:
         r = client.chat.completions.create(
-            model=GROQ_MODEL, messages=msgs, max_tokens=500, temperature=0.7
+            model=st.session_state.groq_model,
+            messages=[{"role":"system","content":sys}] + history +
+                     [{"role":"user","content":query}],
+            max_tokens=500, temperature=0.7
         )
         return r.choices[0].message.content.strip()
     except Exception as e:
         return f"Error: {e}"
 
-# ═══════════════════════════════════════════════════════════════════════════
-# RAG
-# ═══════════════════════════════════════════════════════════════════════════
-
-def ingest_pdf(uploaded_file) -> dict:
-    """Save PDF → split → embed → store in session."""
-    if not RAG_OK:
-        return {"error": "Install langchain-huggingface faiss-cpu pypdf"}
-
-    save_path = UPLOAD_DIR / uploaded_file.name
-    with open(save_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
-
-    try:
-        loader   = PyPDFLoader(str(save_path))
-        pages    = loader.load()
-        splitter = RecursiveCharacterTextSplitter(chunk_size=800, chunk_overlap=100)
-        docs     = splitter.split_documents(pages)
-
-        emb = get_embeddings()
-        if emb is None:
-            return {"error": "Embeddings not available"}
-
-        if st.session_state.vectorstore is None:
-            st.session_state.vectorstore = FAISS.from_documents(docs, emb)
-        else:
-            st.session_state.vectorstore.add_documents(docs)
-
-        meta = {"name": uploaded_file.name, "pages": len(pages),
-                "chunks": len(docs), "added": datetime.now().strftime("%d %b %Y")}
-        st.session_state.kb_docs.append(meta)
-        return meta
-    except Exception as e:
-        return {"error": str(e)}
-
-def rag_query(question: str) -> str:
-    if st.session_state.vectorstore is None:
-        return ""
-    try:
-        docs = st.session_state.vectorstore.similarity_search(question, k=3)
-        return "\n\n".join(d.page_content for d in docs)
-    except:
-        return ""
-
-# ═══════════════════════════════════════════════════════════════════════════
-# CAMERA (only works locally, not on Streamlit Cloud)
-# ═══════════════════════════════════════════════════════════════════════════
-
-def capture_frame():
+# ─────────────────────────────────────────────────────────────────────────
+# CAMERA  — paste your detection logic inside process_frame()
+# ─────────────────────────────────────────────────────────────────────────
+def process_frame(frame):
     """
-    ── PLUG YOUR DETECTION LOGIC HERE ──
-    Replace body with your YOLO / MediaPipe / plant detection.
-    Set st.session_state.detected_obj = "plant" etc.
+    ── DROP YOUR DETECTION CODE HERE ──
+    e.g. YOLO, MediaPipe plant detection, etc.
+    Set st.session_state.detected = "plant leaf"
     """
-    if not CAM_OK:
-        return None
+    frame = cv2.flip(frame, 1)
+    # Example: edge detection overlay
+    # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # st.session_state.detected = "Person"
+    return frame
+
+def grab_frame():
+    if not CAM_OK: return None
     try:
         cap = cv2.VideoCapture(0)
         ok, frame = cap.read()
         cap.release()
         if ok:
-            frame = cv2.flip(frame, 1)
-            # ↓ your detection here → st.session_state.detected_obj = "..."
-            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+            frame = process_frame(frame)
+            _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             return buf.tobytes()
-    except:
-        pass
+    except: pass
     return None
 
-# ═══════════════════════════════════════════════════════════════════════════
-# SIDEBAR  (Admin / Settings)
-# ═══════════════════════════════════════════════════════════════════════════
+def ingest_pdf(f) -> dict:
+    if not RAG_OK: return {"error":"Install: langchain-huggingface faiss-cpu pypdf"}
+    path = Path("uploads") / f.name
+    path.write_bytes(f.getbuffer())
+    try:
+        pages = PyPDFLoader(str(path)).load()
+        docs  = RecursiveCharacterTextSplitter(chunk_size=800,chunk_overlap=100).split_documents(pages)
+        emb   = load_embeddings()
+        if not emb: return {"error":"Embeddings failed"}
+        if st.session_state.vectorstore is None:
+            st.session_state.vectorstore = FAISS.from_documents(docs, emb)
+        else:
+            st.session_state.vectorstore.add_documents(docs)
+        return {"pages": len(pages), "chunks": len(docs)}
+    except Exception as e:
+        return {"error": str(e)}
 
-with st.sidebar:
-    st.markdown("""
-    <div style="text-align:center;padding:1rem 0 .5rem;">
-      <div style="font-family:'Syne',sans-serif;font-size:1.3rem;font-weight:800;
-                  color:#00e5ff;letter-spacing:.2em;">FRIDAY</div>
-      <div style="font-size:.6rem;color:#475569;letter-spacing:.15em;margin-top:.2rem;">ADMIN PANEL</div>
-    </div>
-    """, unsafe_allow_html=True)
+def ingest_text(name: str, text: str) -> dict:
+    if not RAG_OK: return {"error":"RAG not available"}
+    try:
+        from langchain.schema import Document
+        docs = RecursiveCharacterTextSplitter(chunk_size=800,chunk_overlap=100)\
+               .split_documents([Document(page_content=text, metadata={"source":name})])
+        emb = load_embeddings()
+        if not emb: return {"error":"Embeddings failed"}
+        if st.session_state.vectorstore is None:
+            st.session_state.vectorstore = FAISS.from_documents(docs, emb)
+        else:
+            st.session_state.vectorstore.add_documents(docs)
+        return {"chunks": len(docs)}
+    except Exception as e:
+        return {"error": str(e)}
 
-    st.divider()
-
-    # ── KNOWLEDGE BASE ────────────────────────────────────────────────────
-    st.markdown('<div class="panel-title">📚 KNOWLEDGE BASE</div>', unsafe_allow_html=True)
-
-    uploaded = st.file_uploader(
-        "Upload PDF", type=["pdf"], label_visibility="collapsed",
-        help="Upload manuals, docs, or any PDF for Friday to reference"
-    )
-
-    if uploaded:
-        if not any(d["name"] == uploaded.name for d in st.session_state.kb_docs):
-            with st.spinner(f"Processing {uploaded.name}…"):
-                result = ingest_pdf(uploaded)
-            if "error" in result:
-                st.error(result["error"])
-            else:
-                st.success(f"✓ {result['pages']} pages · {result['chunks']} chunks")
-
-    # Doc list
-    if st.session_state.kb_docs:
-        st.markdown('<div style="margin-top:.5rem"></div>', unsafe_allow_html=True)
-        for i, doc in enumerate(st.session_state.kb_docs):
-            col1, col2 = st.columns([5, 1])
-            with col1:
-                st.markdown(
-                    f'<div style="font-size:.7rem;color:#94a3b8;">📄 {doc["name"]}<br>'
-                    f'<span style="color:#475569;font-size:.6rem;">{doc["pages"]}p · {doc.get("added","")}</span></div>',
-                    unsafe_allow_html=True
-                )
-            with col2:
-                if st.button("🗑", key=f"del_{i}", help="Remove"):
-                    st.session_state.kb_docs.pop(i)
-                    st.rerun()
-    else:
-        st.markdown('<div style="font-size:.7rem;color:#475569;padding:.3rem 0;">No documents yet.</div>',
-                    unsafe_allow_html=True)
-
-    st.divider()
-
-    # ── WAKE WORD ─────────────────────────────────────────────────────────
-    st.markdown('<div class="panel-title">⚡ WAKE WORD</div>', unsafe_allow_html=True)
-    wake = st.toggle("Enable 'Friday' wake word", value=st.session_state.wake_active)
-    st.session_state.wake_active = wake
-    if wake:
-        st.markdown('<div style="font-size:.68rem;color:#22c55e;">● Active — say "Friday" to wake</div>',
-                    unsafe_allow_html=True)
-
-    st.divider()
-
-    # ── THEME ─────────────────────────────────────────────────────────────
-    st.markdown('<div class="panel-title">🎨 THEME</div>', unsafe_allow_html=True)
-    with st.expander("Color Settings"):
-        accent  = st.color_picker("Accent",     st.session_state.theme_accent)
-        bg_col  = st.color_picker("Background", st.session_state.theme_bg)
-        if accent != st.session_state.theme_accent or bg_col != st.session_state.theme_bg:
-            st.session_state.theme_accent = accent
-            st.session_state.theme_bg     = bg_col
-            st.markdown(f"""<style>
-                :root {{ --accent:{accent}; --bg:{bg_col}; }}
-                .stApp {{ background:{bg_col}; }}
-            </style>""", unsafe_allow_html=True)
-
-    st.divider()
-
-    # ── SYSTEM PROMPT ─────────────────────────────────────────────────────
-    st.markdown('<div class="panel-title">🧠 SYSTEM PROMPT</div>', unsafe_allow_html=True)
-    with st.expander("Edit Prompt"):
-        new_prompt = st.text_area("", value=SYSTEM_PROMPT, height=140, label_visibility="collapsed")
-        if st.button("Save Prompt"):
-            # Update global (session-scoped)
-            SYSTEM_PROMPT = new_prompt
-            st.success("Saved!")
-
-    st.divider()
-
-    # ── CLEAR CHAT ────────────────────────────────────────────────────────
-    if st.button("🗑 Clear Chat History", use_container_width=True):
-        st.session_state.chat_history = []
-        st.rerun()
-
-    # ── FOOTER ────────────────────────────────────────────────────────────
-    st.markdown(
-        '<div style="font-size:.6rem;color:#334155;text-align:center;margin-top:1rem;">'
-        'FRIDAY v4.0 · Built with ❤</div>',
-        unsafe_allow_html=True
-    )
-
-# ═══════════════════════════════════════════════════════════════════════════
-# MAIN CONTENT
-# ═══════════════════════════════════════════════════════════════════════════
-
-# ── HEADER BAR ─────────────────────────────────────────────────────────────
-groq_state = "on"  if (GROQ_OK and GROQ_API_KEY) else "warn"
-rag_state  = "on"  if RAG_OK else "off"
-kb_state   = "on"  if st.session_state.kb_docs else "off"
-cam_state  = "on"  if CAM_OK else "off"
-wake_state = "on"  if st.session_state.wake_active else "off"
-kb_label   = f"KB {len(st.session_state.kb_docs)}"
+# ─────────────────────────────────────────────────────────────────────────
+# ── TOP NAV
+# ─────────────────────────────────────────────────────────────────────────
+key_ok    = bool(st.session_state.groq_key)
+kb_count  = len(st.session_state.kb_docs)
+dot_brain = "dot-green" if key_ok  else "dot-grey"
+dot_kb    = "dot-blue"  if kb_count else "dot-grey"
 
 st.markdown(f"""
-<div class="friday-header">
-  <div>
-    <div class="friday-title">⚡ FRIDAY</div>
-    <div class="friday-sub">{datetime.now().strftime("%A, %d %B %Y  ·  %I:%M %p")}</div>
-  </div>
-  <div class="badge-row">
-    {badge("BRAIN", groq_state)}
-    {badge("RAG", rag_state)}
-    {badge(kb_label, kb_state)}
-    {badge("CAM", cam_state)}
-    {badge("WAKE", wake_state)}
+<div class="top-nav">
+  <div class="nav-logo">✦ <span>Friday</span></div>
+  <div class="nav-right">
+    <span style="font-size:.75rem;color:#9aa0a6;display:flex;align-items:center;gap:5px;">
+      <span class="status-dot {dot_brain}"></span>
+      {'Groq connected' if key_ok else 'No API key'}
+    </span>
+    <span style="font-size:.75rem;color:#9aa0a6;display:flex;align-items:center;gap:5px;margin-left:8px;">
+      <span class="status-dot {dot_kb}"></span>
+      KB: {kb_count} doc{'s' if kb_count!=1 else ''}
+    </span>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ── TWO-COLUMN LAYOUT ──────────────────────────────────────────────────────
-col_left, col_right = st.columns([1, 1], gap="medium")
+# ─────────────────────────────────────────────────────────────────────────
+# ── MAIN LAYOUT:  camera | chat
+# ─────────────────────────────────────────────────────────────────────────
+col_cam, col_chat = st.columns([11, 9], gap="small")
 
-# ════════════════════════════════════════════════════════════════════════════
-# LEFT COLUMN — Camera + Status
-# ════════════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════
+#  CAMERA COLUMN
+# ══════════════════════════════════════════
+with col_cam:
+    cam_slot = st.empty()
+    det_slot = st.empty()
 
-with col_left:
+    # Controls
+    cc1, cc2, cc3, _ = st.columns([2, 2, 2, 4])
+    with cc1:
+        snap   = st.button("📸 Capture")
+    with cc2:
+        live   = st.toggle("🔴 Live", value=False)
+    with cc3:
+        ask_cam = st.button("💬 Ask about this")
 
-    # ── CAMERA ────────────────────────────────────────────────────────────
-    st.markdown('<div class="panel-title">📷 LIVE VISION</div>', unsafe_allow_html=True)
-
-    cam_placeholder = st.empty()
-    detected_placeholder = st.empty()
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        snap = st.button("📸 Capture", use_container_width=True)
-    with c2:
-        cam_refresh = st.button("🔄 Refresh", use_container_width=True)
-    with c3:
-        cam_stream = st.toggle("Live", value=False)
-
-    if snap or cam_refresh:
-        frame_bytes = capture_frame()
-        if frame_bytes:
-            cam_placeholder.image(frame_bytes, channels="BGR", use_container_width=True)
-            detected_placeholder.markdown(
-                f'<div style="font-size:.72rem;color:#00e5ff;font-family:\'Space Mono\',monospace;'
-                f'margin-top:.3rem;">Detected: {st.session_state.detected_obj}</div>',
+    if snap or live:
+        fb = grab_frame()
+        if fb:
+            cam_slot.image(fb, use_container_width=True)
+            det_slot.markdown(
+                f'<div style="font-size:.75rem;color:#9aa0a6;padding:4px 0;">'
+                f'Detected: <span style="color:#8ab4f8;">{st.session_state.detected}</span></div>',
                 unsafe_allow_html=True
             )
+            st.session_state.cam_frame = True
         else:
-            cam_placeholder.markdown(
-                '<div style="background:#0d1420;border:1px solid rgba(0,229,255,.1);border-radius:8px;'
-                'padding:3rem;text-align:center;color:#334155;font-size:.8rem;">'
-                '📷 Camera not available<br>'
-                '<span style="font-size:.65rem;color:#1e293b;">Camera works locally only on Streamlit Cloud</span>'
-                '</div>', unsafe_allow_html=True
-            )
+            cam_slot.markdown("""
+            <div style="background:#111;border-radius:12px;aspect-ratio:16/9;
+                        display:flex;flex-direction:column;align-items:center;
+                        justify-content:center;gap:10px;color:#444;">
+              <div style="font-size:3rem;">📷</div>
+              <div style="font-size:.8rem;">Camera offline — works locally</div>
+              <div style="font-size:.7rem;color:#333;">Streamlit Cloud has no camera access</div>
+            </div>""", unsafe_allow_html=True)
+    else:
+        cam_slot.markdown("""
+        <div style="background:#111;border-radius:12px;aspect-ratio:16/9;
+                    display:flex;flex-direction:column;align-items:center;
+                    justify-content:center;gap:10px;color:#3c3c3c;">
+          <div style="font-size:3rem;">📷</div>
+          <div style="font-size:.8rem;">Press Capture or enable Live</div>
+        </div>""", unsafe_allow_html=True)
 
-    if cam_stream and CAM_OK:
-        stream_slot = st.empty()
-        for _ in range(30):   # 30 frames then stop (prevents infinite loop)
-            fb = capture_frame()
+    if live and CAM_OK:
+        live_slot = st.empty()
+        for _ in range(50):
+            fb = grab_frame()
             if fb:
-                stream_slot.image(fb, channels="BGR", use_container_width=True)
-            time.sleep(0.15)
+                live_slot.image(fb, use_container_width=True)
+            time.sleep(0.12)
 
-    st.divider()
-
-    # ── STATUS CARDS ──────────────────────────────────────────────────────
-    st.markdown('<div class="panel-title">📊 STATUS</div>', unsafe_allow_html=True)
-
-    st.markdown(f"""
-    <div class="stat-grid">
-      <div class="stat-card">
-        <div class="stat-label">DETECTED</div>
-        <div class="stat-val">{st.session_state.detected_obj}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">KNOWLEDGE BASE</div>
-        <div class="stat-val">{len(st.session_state.kb_docs)} docs</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">AI BRAIN</div>
-        <div class="stat-val-muted">{'Groq ✓' if GROQ_OK and GROQ_API_KEY else 'Echo mode'}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">RAG</div>
-        <div class="stat-val-muted">{'Ready ✓' if RAG_OK else 'Not installed'}</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# ════════════════════════════════════════════════════════════════════════════
-# RIGHT COLUMN — Chat
-# ════════════════════════════════════════════════════════════════════════════
-
-with col_right:
-    st.markdown('<div class="panel-title">💬 FRIDAY CHAT</div>', unsafe_allow_html=True)
-
-    # ── Chat history display ───────────────────────────────────────────────
-    chat_container = st.container(height=420)
-
-    with chat_container:
-        if not st.session_state.chat_history:
-            st.markdown(
-                '<div class="msg-ai">Hello Boss! Friday online and ready. '
-                'Ask me anything or upload a PDF to the knowledge base.'
-                '<div class="msg-meta">System</div></div>',
-                unsafe_allow_html=True
-            )
-
-        for msg in st.session_state.chat_history:
-            kb_tag = '<span class="kb-used">KB</span>' if msg.get("used_kb") else ""
-            if msg["role"] == "user":
-                st.markdown(
-                    f'<div class="msg-user">{msg["content"]}'
-                    f'<div class="msg-meta">{msg.get("time","")}</div></div>',
-                    unsafe_allow_html=True
-                )
-            else:
-                st.markdown(
-                    f'<div class="msg-ai">{msg["content"]}{kb_tag}'
-                    f'<div class="msg-meta">{msg.get("time","")}</div></div>',
-                    unsafe_allow_html=True
-                )
-
-    # ── Input row ─────────────────────────────────────────────────────────
-    with st.form(key="chat_form", clear_on_submit=True):
-        inp_col, btn_col = st.columns([5, 1])
-        with inp_col:
-            user_input = st.text_input(
-                "Message", placeholder="Ask Friday anything…",
-                label_visibility="collapsed"
-            )
-        with btn_col:
-            submitted = st.form_submit_button("SEND", use_container_width=True)
-
-    # ── Process message ────────────────────────────────────────────────────
-    if submitted and user_input.strip():
-        q = user_input.strip()
-
-        # RAG context
-        kb_ctx = rag_query(q)
-
-        # Get AI response
-        with st.spinner("Friday is thinking…"):
-            answer = ask_ai(q, kb_ctx)
-
-        t = now_str()
-        st.session_state.chat_history.append(
-            {"role": "user",      "content": q,      "time": t, "used_kb": False}
-        )
-        st.session_state.chat_history.append(
-            {"role": "assistant", "content": answer,  "time": t, "used_kb": bool(kb_ctx)}
-        )
+    if ask_cam:
+        cam_q = f"What do you see? Camera detected: {st.session_state.detected}. Describe it and give insights."
+        ctx   = rag_query(cam_q)
+        reply = ask_ai(cam_q, ctx, st.session_state.detected)
+        t = datetime.now().strftime("%I:%M %p")
+        st.session_state.messages.append({"role":"user",     "content":cam_q, "time":t})
+        st.session_state.messages.append({"role":"assistant","content":reply, "time":t, "used_kb":bool(ctx)})
         st.rerun()
 
-    # ── Quick commands ─────────────────────────────────────────────────────
-    st.markdown('<div style="margin-top:.4rem;font-size:.62rem;color:#334155;">Quick:</div>',
-                unsafe_allow_html=True)
-    qc1, qc2, qc3, qc4 = st.columns(4)
-    quick_cmds = [
-        (qc1, "🕐 Time",   "What time is it?"),
-        (qc2, "🌤 Weather","What's the weather in Delhi?"),
-        (qc3, "😄 Joke",   "Tell me a joke"),
-        (qc4, "📋 Notes",  "Read my recent notes"),
-    ]
-    for col, label, cmd in quick_cmds:
-        with col:
-            if st.button(label, use_container_width=True, key=f"qc_{label}"):
-                kb_ctx = rag_query(cmd)
-                answer = ask_ai(cmd, kb_ctx)
-                t = now_str()
-                st.session_state.chat_history.append({"role":"user",     "content":cmd,    "time":t})
-                st.session_state.chat_history.append({"role":"assistant","content":answer, "time":t,"used_kb":bool(kb_ctx)})
-                st.rerun()
+# ══════════════════════════════════════════
+#  CHAT COLUMN
+# ══════════════════════════════════════════
+with col_chat:
+
+    # ── Panel toggle button (top right)
+    pcol1, pcol2 = st.columns([8,2])
+    with pcol2:
+        panel_btn = st.button("☰ Setup", key="panel_open_btn")
+    if panel_btn:
+        st.session_state.panel_open = not st.session_state.panel_open
+
+    # ── Messages
+    if not st.session_state.messages:
+        st.markdown("""
+        <div style="display:flex;flex-direction:column;align-items:center;
+                    justify-content:center;padding:40px 20px;text-align:center;gap:10px;">
+          <div style="font-size:2rem;font-weight:300;color:#e8eaed;">
+            Hello, <span style="color:#8ab4f8;font-weight:600;">Boss</span>
+          </div>
+          <div style="font-size:.88rem;color:#9aa0a6;max-width:280px;line-height:1.7;">
+            Ask me anything. I can see your camera, read your documents, and answer questions.
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+        # Suggestion chips
+        sc1,sc2,sc3 = st.columns(3)
+        suggestions = [
+            (sc1, "What time is it?"),
+            (sc2, "Tell me a joke"),
+            (sc3, "What can you do?"),
+        ]
+        for col, sug in suggestions:
+            with col:
+                if st.button(sug, key=f"sug_{sug}", use_container_width=True):
+                    ctx   = rag_query(sug)
+                    reply = ask_ai(sug, ctx)
+                    t     = datetime.now().strftime("%I:%M %p")
+                    st.session_state.messages.append({"role":"user",     "content":sug,  "time":t})
+                    st.session_state.messages.append({"role":"assistant","content":reply,"time":t,"used_kb":bool(ctx)})
+                    st.rerun()
+    else:
+        chat_box = st.container(height=440)
+        with chat_box:
+            for m in st.session_state.messages:
+                if m["role"] == "user":
+                    st.markdown(f"""
+                    <div style="display:flex;justify-content:flex-end;margin:6px 0;">
+                      <div style="max-width:78%;background:#2d2d2d;border-radius:18px 4px 18px 18px;
+                                  padding:10px 14px;font-size:.85rem;line-height:1.6;">
+                        {m['content']}
+                        <div style="font-size:.6rem;color:#5f6368;margin-top:4px;text-align:right;">{m.get('time','')}</div>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+                else:
+                    kb = '<span style="font-size:.6rem;padding:1px 6px;background:rgba(138,180,248,.1);border:1px solid rgba(138,180,248,.2);border-radius:8px;color:#8ab4f8;margin-left:6px;">KB</span>' if m.get("used_kb") else ""
+                    st.markdown(f"""
+                    <div style="display:flex;gap:10px;margin:6px 0;align-items:flex-start;">
+                      <div style="width:28px;height:28px;border-radius:50%;background:#1c1c1c;
+                                  border:1px solid #333;display:flex;align-items:center;
+                                  justify-content:center;font-size:.7rem;color:#8ab4f8;flex-shrink:0;">✦</div>
+                      <div style="max-width:78%;background:#1c1c1c;border-radius:4px 18px 18px 18px;
+                                  padding:10px 14px;font-size:.85rem;line-height:1.6;">
+                        {m['content']}{kb}
+                        <div style="font-size:.6rem;color:#5f6368;margin-top:4px;">{m.get('time','')}</div>
+                      </div>
+                    </div>""", unsafe_allow_html=True)
+
+    # ── Input
+    with st.form("chat_form", clear_on_submit=True):
+        ic1, ic2 = st.columns([9,2])
+        with ic1:
+            user_msg = st.text_input("msg", placeholder="Ask Friday…",
+                                      label_visibility="collapsed")
+        with ic2:
+            send = st.form_submit_button("Send", use_container_width=True)
+
+    if send and user_msg.strip():
+        q   = user_msg.strip()
+        ctx = rag_query(q)
+        with st.spinner(""):
+            reply = ask_ai(q, ctx, st.session_state.detected)
+        t = datetime.now().strftime("%I:%M %p")
+        st.session_state.messages.append({"role":"user",     "content":q,    "time":t})
+        st.session_state.messages.append({"role":"assistant","content":reply,"time":t,"used_kb":bool(ctx)})
+        st.rerun()
+
+    if st.button("🗑 Clear chat", key="clr"):
+        st.session_state.messages = []
+        st.rerun()
+
+# ─────────────────────────────────────────────────────────────────────────
+# ── SETUP PANEL (slides in when ☰ Setup clicked)
+# ─────────────────────────────────────────────────────────────────────────
+if st.session_state.panel_open:
+    with st.sidebar:
+        st.markdown("### ⚙️ Setup")
+
+        # ── API KEY ───────────────────────────────────────────────────────
+        st.markdown("**Groq API Key**")
+        new_key = st.text_input(
+            "key", value=st.session_state.groq_key,
+            placeholder="gsk_...",
+            type="password",
+            label_visibility="collapsed"
+        )
+        if new_key != st.session_state.groq_key:
+            st.session_state.groq_key = new_key
+            st.success("Key saved!")
+
+        st.caption("Get your key free at [console.groq.com](https://console.groq.com)")
+
+        st.divider()
+
+        # ── MODEL ─────────────────────────────────────────────────────────
+        st.markdown("**Model**")
+        model = st.selectbox("model", [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it",
+        ], index=0, label_visibility="collapsed")
+        st.session_state.groq_model = model
+
+        st.divider()
+
+        # ── UPLOAD PDF ────────────────────────────────────────────────────
+        st.markdown("**Upload PDF**")
+        pdf_file = st.file_uploader("pdf", type=["pdf"], label_visibility="collapsed")
+        if pdf_file:
+            if not any(d["name"]==pdf_file.name for d in st.session_state.kb_docs):
+                with st.spinner("Processing…"):
+                    result = ingest_pdf(pdf_file)
+                if "error" in result:
+                    st.error(result["error"])
+                else:
+                    st.session_state.kb_docs.append({
+                        "name": pdf_file.name,
+                        "type": "pdf",
+                        "pages": result["pages"],
+                    })
+                    st.success(f"✓ {result['pages']} pages added")
+
+        # ── PASTE TEXT ────────────────────────────────────────────────────
+        st.markdown("**Or paste text / notes**")
+        txt_title = st.text_input("Title", placeholder="My Notes", key="txt_title")
+        txt_body  = st.text_area("Content", placeholder="Paste any text here…",
+                                  height=120, key="txt_body")
+        if st.button("Add to Knowledge Base", use_container_width=True):
+            if txt_body.strip():
+                with st.spinner("Adding…"):
+                    r = ingest_text(txt_title or "Pasted Text", txt_body)
+                if "error" in r:
+                    st.error(r["error"])
+                else:
+                    st.session_state.kb_docs.append({
+                        "name": txt_title or "Pasted Text",
+                        "type": "text",
+                        "chunks": r["chunks"],
+                    })
+                    st.success(f"✓ Added ({r['chunks']} chunks)")
+
+        # ── DOC LIST ──────────────────────────────────────────────────────
+        if st.session_state.kb_docs:
+            st.divider()
+            st.markdown(f"**Knowledge Base** ({len(st.session_state.kb_docs)} docs)")
+            for i, d in enumerate(st.session_state.kb_docs):
+                c1, c2 = st.columns([5,1])
+                with c1:
+                    icon = "📄" if d["type"]=="pdf" else "📝"
+                    info = f"{d.get('pages','?')}p" if d["type"]=="pdf" else f"{d.get('chunks','?')} chunks"
+                    st.markdown(f"<small>{icon} **{d['name']}** · {info}</small>",
+                                unsafe_allow_html=True)
+                with c2:
+                    if st.button("✕", key=f"rm_{i}"):
+                        st.session_state.kb_docs.pop(i)
+                        st.rerun()
+
+        st.divider()
+
+        # ── SYSTEM PROMPT ────────────────────────────────────────────────
+        with st.expander("✏️ Edit Friday's personality"):
+            new_prompt = st.text_area("Prompt", value=st.session_state.sys_prompt,
+                                       height=120, label_visibility="collapsed")
+            if st.button("Save", key="save_prompt"):
+                st.session_state.sys_prompt = new_prompt
+                st.success("Saved!")
+
+        st.divider()
+        st.caption("friday3.streamlit.app")
