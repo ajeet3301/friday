@@ -1,10 +1,10 @@
 """
-FRIDAY v10.0 - Intent-Based Vision
-- Smart vision activation on trigger words
-- Camera view visible in corner
-- 20+ voice options
-- Improved RAG integration
-- Auto-capture on visual intents
+FRIDAY v10.1 - Full Screen Edition
+- Full-screen camera background
+- Smaller orb (180px)
+- Hindi/Hinglish support (kya chal raha hai, etc.)
+- Intent-based vision
+- 20+ voices
 """
 
 import os
@@ -23,7 +23,7 @@ CONFIG = load_config("friday_config.json", {
     "groq_api_key": os.getenv("GROQ_API_KEY", ""),
     "chat_model": "llama-3.3-70b-versatile",
     "vision_model": "meta-llama/llama-4-scout-17b-16e-instruct",
-    "system_prompt": "You are Friday, a real-time AI voice assistant.",
+    "system_prompt": "You are Friday, a real-time AI voice assistant. You understand both English and Hindi (written in Roman script/Hinglish).",
     "tts_voice": "en-IN-NeerjaNeural",
     "enable_rag": True,
     "max_tokens": 250,
@@ -44,18 +44,16 @@ iframe { border:none!important; }
 
 if not CONFIG['groq_api_key']:
     st.error("❌ API Key not configured")
-    st.info("🔧 Admin Panel: streamlit run friday_admin.py --server.port 8503")
+    st.info("🔧 Admin: streamlit run friday_admin.py --server.port 8503")
     st.stop()
 
-# Load RAG knowledge
 KNOWLEDGE_CONTEXT = ""
 if CONFIG['enable_rag'] and os.path.exists("friday_knowledge/"):
     files = [f for f in os.listdir("friday_knowledge/") if f.endswith(('.txt', '.md'))]
     for file in files[:5]:
         try:
             with open(os.path.join("friday_knowledge/", file), 'r', encoding='utf-8') as f:
-                content = f.read()[:3000]
-                KNOWLEDGE_CONTEXT += f"\n\n[Knowledge from {file}]:\n{content}"
+                KNOWLEDGE_CONTEXT += f"\n\n[Knowledge: {file}]:\n{f.read()[:3000]}"
         except:
             pass
 
@@ -68,30 +66,32 @@ HTML = f"""<!DOCTYPE html>
 <style>
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 html,body {{ width:100vw; height:100vh; overflow:hidden; 
-  background: radial-gradient(ellipse at center, #1a1f3a 0%, #000 100%);
-  font-family: 'Google Sans', 'Roboto', sans-serif; color:#fff; user-select:none; }}
+  background:#000; font-family:'Google Sans','Roboto',sans-serif; color:#fff; user-select:none; }}
 
-/* ── CAMERA VIEW (Visible in corner) ── */
+/* ── FULL SCREEN CAMERA ── */
 #vid {{
-  position:fixed; bottom:24px; right:24px; z-index:8;
-  width:240px; height:180px; border-radius:16px;
-  object-fit:cover; opacity:0; transition:all .5s;
-  border:2px solid rgba(255,255,255,.15);
-  box-shadow: 0 8px 32px rgba(0,0,0,.6);
+  position:fixed; inset:0; width:100%; height:100%; object-fit:cover;
+  opacity:0; transition:opacity 1s; filter: brightness(.7);
 }}
 #vid.on {{ opacity:1; }}
-#vid.analyzing {{
-  border-color:#4facfe;
-  box-shadow: 0 0 30px rgba(79,172,254,.6);
+#vid.analyzing {{ filter: brightness(.7) saturate(1.3); }}
+
+/* ── VIGNETTE ── */
+.vignette {{
+  position:fixed; inset:0; z-index:1; pointer-events:none;
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,.7) 100%);
+}}
+.grad-overlay {{
+  position:fixed; inset:0; z-index:1; pointer-events:none;
+  background: linear-gradient(to bottom, rgba(0,0,0,.4) 0%, transparent 20%, transparent 80%, rgba(0,0,0,.6) 100%);
 }}
 
-/* ── ORB ── */
+/* ── SMALLER ORB (180px) ── */
 #orb {{
-  position:fixed; z-index:5;
-  top:50%; left:50%; transform:translate(-50%, -50%);
-  width:280px; height:280px; border-radius:50%;
+  position:fixed; z-index:5; top:50%; left:50%; transform:translate(-50%, -50%);
+  width:180px; height:180px; border-radius:50%;
   background: radial-gradient(circle at 30% 30%, #4facfe 0%, #00f2fe 25%, #667eea 50%, #764ba2 75%, #f093fb 100%);
-  box-shadow: 0 0 80px rgba(79,172,254,.6), 0 0 120px rgba(102,126,234,.4);
+  box-shadow: 0 0 60px rgba(79,172,254,.5), 0 0 100px rgba(102,126,234,.3);
   opacity:0; transition: all .8s;
 }}
 #orb.on {{ opacity:1; }}
@@ -102,61 +102,68 @@ html,body {{ width:100vw; height:100vh; overflow:hidden;
 @keyframes orbPulse {{ 0%, 100% {{ transform: translate(-50%, -50%) scale(1); }} 50% {{ transform: translate(-50%, -50%) scale(1.15); }} }}
 @keyframes orbRotate {{ from {{ transform: translate(-50%, -50%) rotate(0deg); }} to {{ transform: translate(-50%, -50%) rotate(360deg); }} }}
 @keyframes orbWave {{ 0%, 100% {{ border-radius: 50%; }} 25% {{ border-radius: 45% 55% 50% 50%; }} 50% {{ border-radius: 50% 50% 45% 55%; }} 75% {{ border-radius: 55% 45% 55% 45%; }} }}
-@keyframes orbScan {{ 0%, 100% {{ transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 80px rgba(79,172,254,.9); }} 50% {{ transform: translate(-50%, -50%) scale(1.08); box-shadow: 0 0 120px rgba(79,172,254,1); }} }}
+@keyframes orbScan {{ 0%, 100% {{ transform: translate(-50%, -50%) scale(1); box-shadow: 0 0 60px rgba(79,172,254,.8); }} 50% {{ transform: translate(-50%, -50%) scale(1.1); box-shadow: 0 0 100px rgba(79,172,254,1); }} }}
 
 #ring {{
   position:fixed; z-index:4; top:50%; left:50%; transform:translate(-50%, -50%);
-  width:340px; height:340px; border-radius:50%;
+  width:240px; height:240px; border-radius:50%;
   background: conic-gradient(from 0deg, #4facfe, #00f2fe, #667eea, #764ba2, #f093fb, #4facfe);
-  opacity:0; transition:opacity .8s; filter: blur(30px);
+  opacity:0; transition:opacity .8s; filter: blur(25px);
 }}
-#ring.on {{ opacity:.3; }}
+#ring.on {{ opacity:.25; }}
 
 /* ── TEXT ── */
 #text {{
-  position:fixed; z-index:10; bottom:240px; left:50%; transform:translateX(-50%);
+  position:fixed; z-index:10; bottom:200px; left:50%; transform:translateX(-50%);
   width:min(700px, 90vw); text-align:center; opacity:0; transition:opacity .5s;
 }}
 #text.on {{ opacity:1; }}
-#text-content {{ font-size:1.05rem; font-weight:400; line-height:1.7; color:rgba(255,255,255,.95); text-shadow:0 2px 12px rgba(0,0,0,.8); }}
+#text-content {{ font-size:1.05rem; font-weight:400; line-height:1.7; color:rgba(255,255,255,.95); text-shadow:0 2px 16px rgba(0,0,0,.9); }}
 
 #status {{
-  position:fixed; z-index:10; bottom:200px; left:50%; transform:translateX(-50%);
-  font-size:.75rem; color:rgba(255,255,255,.5); letter-spacing:.08em; text-transform:uppercase;
-  opacity:0; transition:opacity .5s;
+  position:fixed; z-index:10; bottom:160px; left:50%; transform:translateX(-50%);
+  font-size:.75rem; color:rgba(255,255,255,.6); letter-spacing:.1em; text-transform:uppercase;
+  opacity:0; transition:opacity .5s; text-shadow:0 2px 8px rgba(0,0,0,.8);
 }}
 #status.on {{ opacity:1; }}
 
 /* ── LOGO ── */
-#logo {{ position:fixed; top:24px; left:24px; z-index:10; font-size:1.1rem; font-weight:500; color:rgba(255,255,255,.7); opacity:0; transition:opacity .8s .3s; }}
+#logo {{
+  position:fixed; top:24px; left:24px; z-index:10; font-size:1.1rem; font-weight:500;
+  color:rgba(255,255,255,.8); opacity:0; transition:opacity .8s .3s; text-shadow:0 2px 8px rgba(0,0,0,.6);
+}}
 #logo.on {{ opacity:1; }}
 
 /* ── CONTROLS ── */
-#controls {{ position:fixed; right:24px; top:50%; transform:translateY(-50%); z-index:10; display:flex; flex-direction:column; gap:16px; opacity:0; transition:opacity .8s .4s; }}
+#controls {{
+  position:fixed; right:24px; top:50%; transform:translateY(-50%); z-index:10;
+  display:flex; flex-direction:column; gap:16px; opacity:0; transition:opacity .8s .4s;
+}}
 #controls.on {{ opacity:1; }}
 .ctrl-btn {{
-  width:52px; height:52px; border-radius:50%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15);
-  color:rgba(255,255,255,.7); font-size:1.3rem; cursor:pointer; display:flex; align-items:center; justify-content:center;
-  backdrop-filter:blur(20px); transition:.2s;
+  width:52px; height:52px; border-radius:50%; background:rgba(0,0,0,.4); border:1.5px solid rgba(255,255,255,.2);
+  color:rgba(255,255,255,.8); font-size:1.3rem; cursor:pointer; display:flex; align-items:center; justify-content:center;
+  backdrop-filter:blur(20px); transition:.2s; box-shadow:0 4px 16px rgba(0,0,0,.4);
 }}
-.ctrl-btn:hover {{ background:rgba(255,255,255,.15); border-color:rgba(255,255,255,.3); color:#fff; }}
+.ctrl-btn:hover {{ background:rgba(255,255,255,.2); border-color:rgba(255,255,255,.4); color:#fff; transform:scale(1.05); }}
 
 /* ── GEAR ── */
 #gear {{
   position:fixed; top:24px; right:24px; z-index:10; width:44px; height:44px; border-radius:50%;
-  background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); color:rgba(255,255,255,.6);
+  background:rgba(0,0,0,.4); border:1.5px solid rgba(255,255,255,.2); color:rgba(255,255,255,.7);
   font-size:1.1rem; cursor:pointer; display:flex; align-items:center; justify-content:center;
   backdrop-filter:blur(20px); transition:.2s; opacity:0; transition:opacity .8s .5s;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);
 }}
 #gear.on {{ opacity:1; }}
-#gear:hover {{ background:rgba(255,255,255,.15); color:#fff; }}
+#gear:hover {{ background:rgba(255,255,255,.2); color:#fff; }}
 
 /* ── WAKE INDICATOR ── */
 #wake-indicator {{
   position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:10;
-  padding:6px 14px; border-radius:20px; background:rgba(79,172,254,.15); border:1px solid rgba(79,172,254,.3);
-  font-size:.7rem; color:rgba(79,172,254,.9); letter-spacing:.05em; backdrop-filter:blur(10px);
-  opacity:0; transition:opacity .5s;
+  padding:8px 16px; border-radius:24px; background:rgba(79,172,254,.15); border:1.5px solid rgba(79,172,254,.4);
+  font-size:.7rem; color:rgba(79,172,254,1); letter-spacing:.06em; backdrop-filter:blur(15px);
+  opacity:0; transition:opacity .5s; box-shadow:0 4px 20px rgba(79,172,254,.3);
 }}
 #wake-indicator.on {{ opacity:1; }}
 
@@ -166,37 +173,54 @@ html,body {{ width:100vw; height:100vh; overflow:hidden;
   display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; transition:opacity .8s;
 }}
 #start.hide {{ opacity:0; pointer-events:none; }}
-.start-orb {{ width:160px; height:160px; border-radius:50%; background: radial-gradient(circle at 30% 30%, #4facfe, #00f2fe, #667eea, #764ba2, #f093fb); box-shadow: 0 0 60px rgba(79,172,254,.6); animation: startPulse 2s ease-in-out infinite; }}
-@keyframes startPulse {{ 0%, 100% {{ transform:scale(1); opacity:.8; }} 50% {{ transform:scale(1.1); opacity:1; }} }}
+.start-orb {{
+  width:140px; height:140px; border-radius:50%;
+  background: radial-gradient(circle at 30% 30%, #4facfe, #00f2fe, #667eea, #764ba2, #f093fb);
+  box-shadow: 0 0 50px rgba(79,172,254,.6); animation: startPulse 2s ease-in-out infinite;
+}}
+@keyframes startPulse {{ 0%, 100% {{ transform:scale(1); opacity:.8; }} 50% {{ transform:scale(1.08); opacity:1; }} }}
 .start-title {{ font-size:2rem; font-weight:300; letter-spacing:.15em; margin-top:20px; }}
-.start-sub {{ font-size:.85rem; color:rgba(255,255,255,.4); max-width:340px; text-align:center; line-height:1.6; }}
-#start-btn {{ margin-top:16px; padding:14px 38px; border-radius:30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:#fff; border:none; font-size:.95rem; font-weight:500; cursor:pointer; }}
-#start-btn:hover {{ transform:scale(1.05); }}
+.start-sub {{ font-size:.85rem; color:rgba(255,255,255,.4); max-width:360px; text-align:center; line-height:1.6; }}
+#start-btn {{
+  margin-top:16px; padding:14px 40px; border-radius:30px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color:#fff; border:none; font-size:.95rem; font-weight:500; cursor:pointer; letter-spacing:.02em;
+}}
+#start-btn:hover {{ transform:scale(1.05); opacity:.95; }}
 
 /* ── SETTINGS ── */
 #settings {{
-  position:fixed; top:0; right:0; bottom:0; width:340px; background:rgba(8,8,8,.97); border-left:1px solid rgba(255,255,255,.06);
+  position:fixed; top:0; right:0; bottom:0; width:340px; background:rgba(8,8,8,.97); border-left:1.5px solid rgba(255,255,255,.08);
   z-index:200; transform:translateX(100%); transition:transform .3s; padding:24px; overflow-y:auto; backdrop-filter:blur(20px);
 }}
 #settings.open {{ transform:translateX(0); }}
-.s-overlay {{ position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:199; display:none; }}
+.s-overlay {{ position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:199; display:none; backdrop-filter:blur(4px); }}
 .s-overlay.show {{ display:block; }}
 .s-head {{ font-size:1rem; font-weight:500; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center; }}
-.s-close {{ width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,.06); border:none; color:#888; cursor:pointer; font-size:1rem; display:flex; align-items:center; justify-content:center; }}
-.s-close:hover {{ color:#fff; }}
+.s-close {{
+  width:32px; height:32px; border-radius:50%; background:rgba(255,255,255,.06); border:none; color:#888;
+  cursor:pointer; font-size:1rem; display:flex; align-items:center; justify-content:center;
+}}
+.s-close:hover {{ color:#fff; background:rgba(255,255,255,.12); }}
 .s-section {{ font-size:.65rem; color:#555; letter-spacing:.1em; text-transform:uppercase; margin:20px 0 8px; }}
-.s-input {{ width:100%; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.08); border-radius:10px; padding:10px 14px; color:#fff; font-size:.85rem; outline:none; }}
-.s-input:focus {{ border-color:rgba(138,180,248,.4); }}
+.s-input {{
+  width:100%; background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+  border-radius:10px; padding:10px 14px; color:#fff; font-size:.85rem; outline:none;
+}}
+.s-input:focus {{ border-color:rgba(138,180,248,.5); }}
 select.s-input option {{ background:#111; }}
-.s-btn {{ width:100%; padding:10px; border-radius:12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color:#fff; border:none; font-weight:500; font-size:.85rem; cursor:pointer; margin-top:10px; }}
-.s-btn:hover {{ opacity:.9; }}
+.s-btn {{
+  width:100%; padding:11px; border-radius:12px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color:#fff; border:none; font-weight:500; font-size:.85rem; cursor:pointer; margin-top:10px;
+}}
+.s-btn:hover {{ opacity:.92; }}
 textarea.s-input {{ resize:vertical; font-family:inherit; }}
-.s-note {{ font-size:.7rem; color:#444; margin-top:5px; line-height:1.4; }}
+.s-note {{ font-size:.7rem; color:#444; margin-top:5px; line-height:1.5; }}
 
 #toast {{
-  position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.85); border:1px solid rgba(255,255,255,.15);
-  border-radius:12px; padding:10px 20px; font-size:.8rem; color:#ccc; z-index:300; opacity:0; transition:opacity .3s;
-  pointer-events:none; backdrop-filter:blur(20px);
+  position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,.9); border:1.5px solid rgba(255,255,255,.15);
+  border-radius:12px; padding:10px 20px; font-size:.8rem; color:#ddd; z-index:300; opacity:0; transition:opacity .3s;
+  pointer-events:none; backdrop-filter:blur(20px); box-shadow:0 4px 20px rgba(0,0,0,.6);
 }}
 #toast.show {{ opacity:1; }}
 </style>
@@ -204,12 +228,14 @@ textarea.s-input {{ resize:vertical; font-family:inherit; }}
 <body>
 
 <video id="vid" autoplay playsinline muted></video>
+<div class="vignette"></div>
+<div class="grad-overlay"></div>
 
 <!-- ══ START ══ -->
 <div id="start">
   <div class="start-orb"></div>
   <div class="start-title">FRIDAY</div>
-  <div class="start-sub">▶ Start → Camera on corner<br>Say "Friday" → Continuous talk<br>Say "what is this" → Auto vision</div>
+  <div class="start-sub">Full-screen camera • Smaller orb<br>Say "Friday" → Talk in Hindi/Hinglish<br>"kya hai" → Auto-vision</div>
   <button id="start-btn" onclick="launch()">▶ &nbsp; Start</button>
 </div>
 
@@ -223,7 +249,7 @@ textarea.s-input {{ resize:vertical; font-family:inherit; }}
 <div id="status">Ready</div>
 
 <div id="controls">
-  <button class="ctrl-btn" onclick="manualCapture()" title="Manual Capture">📸</button>
+  <button class="ctrl-btn" onclick="manualCapture()" title="Capture">📸</button>
   <button class="ctrl-btn" onclick="flipCam()" title="Flip">🔄</button>
   <button class="ctrl-btn" onclick="toggleMute()" title="Mute" id="mute-btn">🔊</button>
 </div>
@@ -239,66 +265,41 @@ textarea.s-input {{ resize:vertical; font-family:inherit; }}
     <option value="llama-3.1-70b-versatile">Llama 3.1 70B</option>
     <option value="llama-3.1-8b-instant">Llama 3.1 8B (fast)</option>
     <option value="mixtral-8x7b-32768">Mixtral 8x7B</option>
-    <option value="gemma2-9b-it">Gemma2 9B</option>
   </select>
 
   <div class="s-section">Vision Model</div>
   <select class="s-input" id="s-vision">
-    <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout 17B (best)</option>
-    <option value="llama-3.2-11b-vision-preview">Llama 3.2 11B Vision</option>
-    <option value="llama-3.2-90b-vision-preview">Llama 3.2 90B Vision</option>
+    <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout (best)</option>
+    <option value="llama-3.2-11b-vision-preview">Llama 3.2 11B</option>
+    <option value="llama-3.2-90b-vision-preview">Llama 3.2 90B</option>
   </select>
 
-  <div class="s-section">Friday's Voice (20+ Options)</div>
+  <div class="s-section">Voice (20+ Options)</div>
   <select class="s-input" id="s-voice">
-    <optgroup label="🇮🇳 Indian English">
+    <optgroup label="🇮🇳 Indian">
       <option value="en-IN-NeerjaNeural">Neerja (Female)</option>
       <option value="en-IN-PrabhatNeural">Prabhat (Male)</option>
     </optgroup>
-    <optgroup label="🇺🇸 US English">
-      <option value="en-US-JennyNeural">Jenny (Female)</option>
-      <option value="en-US-GuyNeural">Guy (Male)</option>
-      <option value="en-US-AriaNeural">Aria (Female)</option>
-      <option value="en-US-DavisNeural">Davis (Male)</option>
-      <option value="en-US-AmberNeural">Amber (Female)</option>
-      <option value="en-US-AnaNeural">Ana (Female)</option>
+    <optgroup label="🇺🇸 US">
+      <option value="en-US-JennyNeural">Jenny</option>
+      <option value="en-US-GuyNeural">Guy</option>
+      <option value="en-US-AriaNeural">Aria</option>
+      <option value="en-US-AmberNeural">Amber</option>
     </optgroup>
-    <optgroup label="🇬🇧 UK English">
-      <option value="en-GB-SoniaNeural">Sonia (Female)</option>
-      <option value="en-GB-RyanNeural">Ryan (Male)</option>
-      <option value="en-GB-LibbyNeural">Libby (Female)</option>
-      <option value="en-GB-MaisieNeural">Maisie (Female - Child)</option>
-    </optgroup>
-    <optgroup label="🇦🇺 Australian English">
-      <option value="en-AU-NatashaNeural">Natasha (Female)</option>
-      <option value="en-AU-WilliamNeural">William (Male)</option>
-    </optgroup>
-    <optgroup label="🇨🇦 Canadian English">
-      <option value="en-CA-ClaraNeural">Clara (Female)</option>
-      <option value="en-CA-LiamNeural">Liam (Male)</option>
+    <optgroup label="🇬🇧 UK">
+      <option value="en-GB-SoniaNeural">Sonia</option>
+      <option value="en-GB-RyanNeural">Ryan</option>
     </optgroup>
     <optgroup label="🇮🇳 Hindi">
-      <option value="hi-IN-SwaraNeural">Swara (Female)</option>
-      <option value="hi-IN-MadhurNeural">Madhur (Male)</option>
-    </optgroup>
-    <optgroup label="🇪🇸 Spanish">
-      <option value="es-ES-ElviraNeural">Elvira (Female)</option>
-      <option value="es-MX-DaliaNeural">Dalia (Mexican Female)</option>
-    </optgroup>
-    <optgroup label="🇫🇷 French">
-      <option value="fr-FR-DeniseNeural">Denise (Female)</option>
-      <option value="fr-FR-HenriNeural">Henri (Male)</option>
+      <option value="hi-IN-SwaraNeural">Swara</option>
+      <option value="hi-IN-MadhurNeural">Madhur</option>
     </optgroup>
   </select>
-  <div class="s-note">Voice may depend on browser TTS support. Some voices work better in Chrome.</div>
 
   <div class="s-section">Personality</div>
   <textarea class="s-input" id="s-prompt" rows="5">{CONFIG['system_prompt']}</textarea>
 
   <button class="s-btn" onclick="saveSettings()">Save Settings</button>
-
-  <div class="s-section" style="margin-top:30px;">Admin Panel</div>
-  <div class="s-note">Full control (API, theme, RAG):<br><code style="color:#4facfe;">streamlit run friday_admin.py --server.port 8503</code></div>
 </div>
 
 <div id="toast"></div>
@@ -315,14 +316,21 @@ const CONFIG = {{
   knowledge: `{KNOWLEDGE_CONTEXT.replace('`', '').replace(chr(10), ' ')[:3000]}`
 }};
 
-// VISION INTENT TRIGGERS
+// VISION TRIGGERS (English + Hindi/Hinglish)
 const VISION_TRIGGERS = [
+  // English
   "what is this", "what is that", "what's this", "what's that",
   "see this", "see that", "look at this", "look at that", "look here",
-  "kya hai", "ye kya hai", "yeh kya hai", "kya hai ye", "kya hai yeh",
-  "dekh", "dekho", "dekh lo", "dekho ye", "dekho yeh",
   "identify this", "identify that", "what am i looking at",
-  "tell me what this is", "can you see this", "do you see this"
+  "tell me what this is", "can you see this", "show me",
+  
+  // Hindi/Hinglish
+  "kya hai", "ye kya hai", "yeh kya hai", "kya hai ye", "kya hai yeh",
+  "yeh kya", "ye kya", "kya dikhai de raha",
+  "dekh", "dekho", "dekh lo", "dekho ye", "dekho yeh", "dekh ye",
+  "batao kya hai", "bata kya hai", "yeh dikhao",
+  "isme kya hai", "is me kya hai",
+  "kya chal raha hai", "kya ho raha hai"
 ];
 
 const STATE = {{
@@ -334,7 +342,7 @@ const STATE = {{
 async function launch() {{
   try {{
     STATE.stream = await navigator.mediaDevices.getUserMedia({{
-      video: {{ facingMode: STATE.facing, width:{{ideal:1280}}, height:{{ideal:720}} }}, audio: false
+      video: {{ facingMode: STATE.facing, width:{{ideal:1920}}, height:{{ideal:1080}} }}, audio: false
     }});
     document.getElementById("vid").srcObject = STATE.stream;
     document.getElementById("vid").classList.add("on");
@@ -345,7 +353,7 @@ async function launch() {{
         document.getElementById(id).classList.add("on")
       );
       startWakeWordListener();
-      toast("Camera on • Say 'Friday' to activate");
+      toast("Full screen ready • Say 'Friday'");
     }}, 500);
   }} catch(e) {{
     document.getElementById("start-btn").textContent = "Camera denied";
@@ -377,7 +385,7 @@ function activate() {{
   STATE.active = true;
   STATE.lastInteraction = Date.now();
   setStatus("listening");
-  setText("Yes?");
+  setText("Haan bolo?");
   document.getElementById("wake-indicator").classList.remove("on");
   startConversationListener();
 }}
@@ -398,23 +406,21 @@ function startConversationListener() {{
     
     setText(`"${{text}}"`);
     
-    // CHECK FOR VISION INTENT
+    // CHECK VISION INTENT
     const lowerText = text.toLowerCase();
     const hasVisionIntent = VISION_TRIGGERS.some(trigger => lowerText.includes(trigger));
     
     if (hasVisionIntent) {{
-      // VISION MODE: Capture → Vision AI → LLM Reasoner
       const now = Date.now();
-      if (now - STATE.lastVisionCapture > 2000) {{ // Throttle: max 1 capture per 2s
+      if (now - STATE.lastVisionCapture > 2000) {{
         STATE.lastVisionCapture = now;
         setStatus("analyzing");
         autoCapture(text);
       }} else {{
-        toast("Please wait 2s between vision requests");
+        toast("2 second wait");
         setStatus("listening");
       }}
     }} else {{
-      // NORMAL CHAT MODE
       setStatus("thinking");
       callGroq(text, false);
     }}
@@ -445,7 +451,7 @@ function deactivate() {{
   if (STATE.talkRecog) STATE.talkRecog.stop();
   clearTimeout(STATE.silenceTimer);
   setStatus("sleeping");
-  setText("Say 'Friday' to wake");
+  setText("'Friday' bolo");
   setTimeout(() => {{
     setText("");
     document.getElementById("wake-indicator").classList.add("on");
@@ -453,39 +459,33 @@ function deactivate() {{
   }}, 2000);
 }}
 
-// ══════════════════════════════════════
-// VISION PIPELINE
-// ══════════════════════════════════════
 async function autoCapture(userQuery) {{
-  if (!STATE.stream) {{ speak("Camera not available"); return; }}
+  if (!STATE.stream) {{ speak("Camera nahi hai"); return; }}
   
   const vid = document.getElementById("vid");
   vid.classList.add("analyzing");
   
   const c = document.createElement("canvas");
-  c.width = vid.videoWidth || 640;
-  c.height = vid.videoHeight || 480;
+  c.width = vid.videoWidth || 1280;
+  c.height = vid.videoHeight || 720;
   c.getContext("2d").drawImage(vid, 0, 0);
-  const b64 = c.toDataURL("image/jpeg", .85).split(",")[1];
+  const b64 = c.toDataURL("image/jpeg", .90).split(",")[1];
   
-  // Step 1: Vision AI describes what it sees
-  const visionDescription = await callGroqVision(b64);
-  
+  const visionDesc = await callGroqVision(b64);
   vid.classList.remove("analyzing");
   
-  if (!visionDescription) return;
+  if (!visionDesc) return;
   
-  // Step 2: LLM Reasoner answers user's question based on vision
-  STATE.camAnalysis = visionDescription;
+  STATE.camAnalysis = visionDesc;
   setStatus("thinking");
   callGroq(userQuery, true);
 }}
 
 function manualCapture() {{
-  if (!STATE.active) {{ toast("Activate Friday first (say 'Friday')"); return; }}
+  if (!STATE.active) {{ toast("Pehle 'Friday' bolo"); return; }}
   STATE.lastVisionCapture = Date.now();
   setStatus("analyzing");
-  autoCapture("What do you see in this image?");
+  autoCapture("Isme kya hai?");
 }}
 
 async function callGroqVision(b64) {{
@@ -499,7 +499,7 @@ async function callGroqVision(b64) {{
           role: "user",
           content: [
             {{ type:"image_url", image_url:{{ url:"data:image/jpeg;base64," + b64 }} }},
-            {{ type:"text", text: "Describe what you see in this image in 2-3 detailed sentences. Focus on objects, text, conditions, and any issues or recommendations." }}
+            {{ type:"text", text: "Describe what you see in this image in detail (2-3 sentences). Focus on objects, text, conditions, problems, and recommendations." }}
           ]
         }}],
         max_tokens: 300
@@ -510,33 +510,21 @@ async function callGroqVision(b64) {{
     const data = await res.json();
     return data.choices[0].message.content.trim();
   }} catch(e) {{
-    speak("Vision analysis failed");
+    speak("Vision kaam nahi kar raha");
     return null;
   }}
 }}
 
-// ══════════════════════════════════════
-// CHAT WITH RAG
-// ══════════════════════════════════════
 async function callGroq(userText, includeVision) {{
   const sys = CONFIG.prompt + 
-    "\\n\\nCurrent time: " + new Date().toLocaleString("en-US", {{hour:"2-digit",minute:"2-digit"}}) +
-    ", " + new Date().toLocaleDateString("en-US", {{weekday:"long",day:"numeric",month:"long"}});
+    "\\n\\nTime: " + new Date().toLocaleString("en-US", {{hour:"2-digit",minute:"2-digit",weekday:"long"}});
   
-  let contextStr = "";
-  
-  // Add vision context if vision mode
-  if (includeVision && STATE.camAnalysis) {{
-    contextStr += "\\n\\n[CAMERA SEES]: " + STATE.camAnalysis;
-  }}
-  
-  // Add RAG knowledge
-  if (CONFIG.knowledge) {{
-    contextStr += "\\n\\n[KNOWLEDGE BASE]: " + CONFIG.knowledge.slice(0, 800);
-  }}
+  let ctx = "";
+  if (includeVision && STATE.camAnalysis) ctx += "\\n\\n[CAMERA]: " + STATE.camAnalysis;
+  if (CONFIG.knowledge) ctx += "\\n\\n[KNOWLEDGE]: " + CONFIG.knowledge.slice(0, 900);
   
   const messages = [
-    {{ role:"system", content: sys + contextStr }},
+    {{ role:"system", content: sys + ctx }},
     ...STATE.history.slice(-8),
     {{ role:"user", content: userText }}
   ];
@@ -562,7 +550,7 @@ async function callGroq(userText, includeVision) {{
 
     speak(reply);
   }} catch(e) {{
-    speak("Network error, Boss.");
+    speak("Network problem hai");
   }}
 }}
 
@@ -572,7 +560,7 @@ async function flipCam() {{
   try {{
     STATE.stream = await navigator.mediaDevices.getUserMedia({{ video: {{ facingMode: STATE.facing }}, audio: false }});
     document.getElementById("vid").srcObject = STATE.stream;
-  }} catch(e) {{ toast("Couldn't flip camera"); }}
+  }} catch(e) {{ toast("Camera flip nahi hua"); }}
 }}
 
 function speak(text) {{
@@ -589,12 +577,11 @@ function speak(text) {{
   utt.pitch = 0.95;
   utt.volume = 1;
   
-  // Try to use configured voice
   const voices = speechSynthesis.getVoices();
   const voiceName = CONFIG.voice.replace("Neural", "");
   const pick = voices.find(v => v.name.includes(voiceName)) || 
                voices.find(v => v.lang.startsWith("en-IN")) ||
-               voices.find(v => v.lang.startsWith("en")) ||
+               voices.find(v => v.lang.startsWith("hi-IN")) ||
                voices[0];
   if (pick) utt.voice = pick;
 
@@ -615,13 +602,7 @@ function setStatus(state) {{
                   state === "thinking" ? "on thinking" : 
                   state === "speaking" ? "on speaking" :
                   state === "analyzing" ? "on analyzing" : "on";
-  const labels = {{ 
-    listening: "Listening...", 
-    thinking: "Thinking...", 
-    speaking: "Speaking...", 
-    analyzing: "Analyzing vision...", 
-    sleeping: "Sleeping..." 
-  }};
+  const labels = {{ listening: "Sun raha hoon...", thinking: "Soch raha hoon...", speaking: "Bol raha hoon...", analyzing: "Dekh raha hoon...", sleeping: "So gaya..." }};
   status.textContent = labels[state] || "Ready";
 }}
 
@@ -641,7 +622,7 @@ function toast(msg, duration=2500) {{
 function toggleMute() {{
   STATE.muted = !STATE.muted;
   document.getElementById("mute-btn").textContent = STATE.muted ? "🔇" : "🔊";
-  toast(STATE.muted ? "Muted" : "Unmuted");
+  toast(STATE.muted ? "Mute hai" : "Unmute hai");
 }}
 
 function openSettings() {{
@@ -664,12 +645,10 @@ function saveSettings() {{
   CONFIG.voice = document.getElementById("s-voice").value;
   CONFIG.prompt = document.getElementById("s-prompt").value;
   closeSettings();
-  toast("Settings saved ✓");
+  toast("Settings save ho gayi");
 }}
 
-// Load voices
 speechSynthesis.onvoiceschanged = () => {{ speechSynthesis.getVoices(); }};
-// Force load voices on start
 setTimeout(() => speechSynthesis.getVoices(), 100);
 </script>
 </body>
