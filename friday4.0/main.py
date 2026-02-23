@@ -423,21 +423,12 @@ select.s-input option {{ background:#0d0d14; }}
     <div class="start-orb"></div>
   </div>
   <div class="start-title">FRIDAY</div>
-  <div class="start-version">v11.0 · AI ASSISTANT</div>
-  <div class="start-features">
-    <span class="feat-pill">📸 Vision</span>
-    <span class="feat-pill">🇮🇳 Hindi / Hinglish</span>
-    <span class="feat-pill">💬 Memory</span>
-    <span class="feat-pill">🔒 Secure</span>
-    <span class="feat-pill">🎤 Wake Word</span>
-  </div>
   <button id="start-btn" onclick="launch()">▶ &nbsp; Start Friday</button>
   <div class="start-note">Say "Friday" to wake up • Tap orb anytime</div>
 </div>
 
 <!-- ══ MAIN UI ══ -->
-<div id="logo">FRI<span>DAY</span></div>
-<div id="shortcut-hint">Space: activate<br>M: mute<br>V: vision<br>Esc: sleep</div>
+<div id="logo">FRIDAY</div>
 
 <!-- Conversation history panel (top-right area) -->
 <div id="conv-panel"></div>
