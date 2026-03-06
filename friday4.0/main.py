@@ -435,7 +435,7 @@ select.s-in option{{background:#08080f}}
   <div class="chip" onclick="sendQ('Kya dekh raha hoon?')">👁 Kya hai</div>
   <div class="chip" onclick="sendQ('Summarize uploaded docs')">📎 Docs</div>
   <div class="chip" onclick="sendQ('Hindi mein batao')">🇮🇳 Hindi</div>
-  <div class="chip" onclick="sendQ('Write a python script for this')">🐍 Code</div>
+  
 </div>
 
 <div id="pills"></div>
@@ -445,7 +445,7 @@ select.s-in option{{background:#08080f}}
     +
     <div id="rag-badge">0</div>
   </button>
-  <input type="file" id="fi" accept=".txt,.md,.pdf" multiple onchange="loadFiles(this)">
+  
   <textarea id="tinput" placeholder="Message…" rows="1"
     oninput="resize(this)" onkeydown="onKey(event)"></textarea>
   <button id="sbtn" onclick="sendText()">↑</button>
