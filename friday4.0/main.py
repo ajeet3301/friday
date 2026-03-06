@@ -1,9 +1,5 @@
 """
-FRIDAY v13 — Mobile-first, minimal UI
-- + button for RAG upload
-- Phone-optimized layout
-- Less text everywhere
-- Safe area / notch support
+FRIDAY v13.1 — Upgraded RAG, Markdown Chat, Dynamic Voices
 """
 
 import os, json
@@ -21,10 +17,10 @@ CONFIG = load_config("friday_config.json", {
     "groq_api_key": os.getenv("GROQ_API_KEY", ""),
     "chat_model": "llama-3.3-70b-versatile",
     "vision_model": "meta-llama/llama-4-scout-17b-16e-instruct",
-    "system_prompt": "You are Friday, a real-time AI voice assistant. Understand English and Hindi/Hinglish. Be very concise.",
-    "tts_voice": "en-IN-NeerjaNeural",
+    "system_prompt": "You are Friday, a real-time AI voice assistant. Understand English and Hindi/Hinglish. Be very concise. Use markdown for code and lists.",
+    "tts_voice": "Google UK English Female", # Will be overridden by dynamic local voices
     "enable_rag": True,
-    "max_tokens": 250,
+    "max_tokens": 300,
     "temperature": 0.75
 })
 
@@ -54,6 +50,10 @@ HTML = f"""<!DOCTYPE html>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Friday</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@300;400;500&family=Syne+Mono&display=swap');
 
@@ -162,13 +162,23 @@ html,body{{
   display:flex;flex-direction:column;gap:7px;
   padding:8px 14px 12px;
   scrollbar-width:none;
+  scroll-behavior: smooth;
 }}
 #conv::-webkit-scrollbar{{display:none}}
 .msg{{
-  max-width:82%;padding:9px 12px;border-radius:14px;
-  font-size:.8rem;line-height:1.6;font-weight:300;
+  max-width:85%;padding:10px 14px;border-radius:14px;
+  font-size:.85rem;line-height:1.5;font-weight:300;
   animation:mIn .22s ease;backdrop-filter:blur(12px);
+  word-wrap:break-word;
 }}
+/* Markdown Styles inside Messages */
+.msg p {{ margin-bottom: 6px; }}
+.msg p:last-child {{ margin-bottom: 0; }}
+.msg pre {{ background: rgba(0,0,0,0.4); padding: 8px; border-radius: 6px; overflow-x: auto; margin: 6px 0; border: 1px solid rgba(255,255,255,0.1); font-family: 'Syne Mono', monospace; font-size: 0.75rem; }}
+.msg code {{ background: rgba(0,0,0,0.3); padding: 2px 4px; border-radius: 4px; font-family: 'Syne Mono', monospace; font-size: 0.75rem; color: #f093fb; }}
+.msg ul, .msg ol {{ margin-left: 20px; margin-bottom: 6px; }}
+.msg strong {{ font-weight: 500; color: #4facfe; }}
+
 @keyframes mIn{{from{{opacity:0;transform:translateY(5px)}}to{{opacity:1;transform:none}}}}
 .msg.u{{
   align-self:flex-end;margin-left:auto;
@@ -180,9 +190,12 @@ html,body{{
   background:rgba(255,255,255,.07);border:1px solid var(--c-border);
   border-bottom-left-radius:3px;
 }}
+.msg.typing {{
+  color: rgba(255,255,255,0.5); font-style: italic;
+}}
 .msg-meta{{
   display:flex;justify-content:space-between;align-items:center;
-  margin-top:4px;gap:8px;
+  margin-top:6px;gap:8px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 4px;
 }}
 .msg-t{{font-size:.55rem;color:rgba(255,255,255,.25);font-family:'Syne Mono'}}
 .cpybtn{{
@@ -276,7 +289,7 @@ html,body{{
 #sbtn:active{{transform:scale(.9)}}
 #sbtn:disabled{{opacity:.3;cursor:not-allowed;transform:none}}
 
-/* ── FILE PILLS (above bar) ── */
+/* ── FILE PILLS ── */
 #pills{{
   position:fixed;z-index:15;
   bottom:calc(var(--bar-h) + var(--safe-b) + 4px);
@@ -389,15 +402,13 @@ select.s-in option{{background:#08080f}}
 <div class="scanl" id="scanl"></div>
 <div class="grad"></div>
 
-<!-- INIT -->
 <div id="init">
   <div class="i-orb"></div>
   <div class="i-name">FRIDAY</div>
-  <div class="i-ver">v13</div>
-  <div class="i-st" id="ist">Starting...</div>
+  <div class="i-ver">v13.1</div>
+  <div class="i-st" id="ist">System Boot...</div>
 </div>
 
-<!-- HEADER -->
 <div id="hdr">
   <div id="logo">FRI<b>DAY</b></div>
   <div id="hdr-btns">
@@ -408,34 +419,27 @@ select.s-in option{{background:#08080f}}
   </div>
 </div>
 
-<!-- CONV -->
 <div id="conv"></div>
 
-<!-- STATUS -->
 <div id="sdot">
   <div id="dot" class="idle"></div>
   <div id="stxt">—</div>
 </div>
 
-<!-- ORB -->
 <div id="orb-wrap" onclick="manualActivate()">
   <div id="orb-glow"></div>
   <div id="orb"></div>
 </div>
 
-<!-- CHIPS (shown when idle) -->
 <div id="chips">
   <div class="chip" onclick="sendQ('Kya dekh raha hoon?')">👁 Kya hai</div>
   <div class="chip" onclick="sendQ('Summarize uploaded docs')">📎 Docs</div>
   <div class="chip" onclick="sendQ('Hindi mein batao')">🇮🇳 Hindi</div>
-  <div class="chip" onclick="sendQ('What should I do now?')">⚡ Next</div>
-  <div class="chip" onclick="sendQ('Explain simply')">💡 Explain</div>
+  <div class="chip" onclick="sendQ('Write a python script for this')">🐍 Code</div>
 </div>
 
-<!-- FILE PILLS -->
 <div id="pills"></div>
 
-<!-- BOTTOM BAR -->
 <div id="bar">
   <button id="rag-btn" onclick="document.getElementById('fi').click()" title="Upload doc">
     +
@@ -447,7 +451,6 @@ select.s-in option{{background:#08080f}}
   <button id="sbtn" onclick="sendText()">↑</button>
 </div>
 
-<!-- SETTINGS -->
 <div class="s-ov" id="sov" onclick="closeSett()"></div>
 <div id="sett">
   <div class="sett-handle"></div>
@@ -462,13 +465,9 @@ select.s-in option{{background:#08080f}}
     <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout</option>
     <option value="llama-3.2-11b-vision-preview">Llama 3.2 11B</option>
   </select>
-  <div class="s-lbl">Voice</div>
+  <div class="s-lbl">Voice (Dynamic)</div>
   <select class="s-in" id="svv">
-    <option value="en-IN-NeerjaNeural">Neerja 🇮🇳</option>
-    <option value="en-IN-PrabhatNeural">Prabhat 🇮🇳</option>
-    <option value="en-US-JennyNeural">Jenny 🇺🇸</option>
-    <option value="hi-IN-SwaraNeural">Swara हि</option>
-  </select>
+    </select>
   <div class="s-lbl">Memory</div>
   <select class="s-in" id="smem">
     <option value="10">10 turns</option>
@@ -484,7 +483,7 @@ select.s-in option{{background:#08080f}}
 <div id="toast"></div>
 
 <script>
-// ── Security ──
+// ── Security & Config ──
 const _k = "{CONFIG['groq_api_key']}";
 Object.defineProperty(window,'__k',{{value:Object.freeze({{k:_k}}),writable:false,configurable:false}});
 const _ol=console.log;
@@ -519,7 +518,7 @@ async function boot(){{
   try{{
     S.stream=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:S.facing,width:{{ideal:1920}},height:{{ideal:1080}}}},audio:false}});
     const v=document.getElementById("vid");v.srcObject=S.stream;v.classList.add("on");
-    ist("Camera ready ✓");await sl(500);ist("Starting…");await sl(500);
+    ist("Camera ready ✓");await sl(500);ist("Starting AI Engine…");await sl(500);
   }}catch(e){{ist("No camera — text only");await sl(800)}}
   ist("Ready");await sl(500);
   document.getElementById("init").classList.add("out");
@@ -530,11 +529,29 @@ async function boot(){{
     document.getElementById("bar").classList.add("on");
     if(S.voiceOn) startWake();
     setS("idle");
-    toast("Friday ready");
+    toast("Friday Online");
   }},850);
 }}
 function ist(t){{document.getElementById("ist").textContent=t}}
 const sl=ms=>new Promise(r=>setTimeout(r,ms));
+
+// ── DYNAMIC VOICE POPULATION ──
+function loadVoices() {{
+    const vs = speechSynthesis.getVoices();
+    const sel = document.getElementById("svv");
+    if (vs.length === 0 || sel.options.length > 0) return; 
+    
+    sel.innerHTML = ""; 
+    vs.forEach(v => {{
+        const opt = document.createElement("option");
+        opt.value = v.name;
+        opt.textContent = `${{v.name}} (${{v.lang}})`;
+        sel.appendChild(opt);
+    }});
+    if(CFG.voice) sel.value = CFG.voice;
+}}
+speechSynthesis.onvoiceschanged = loadVoices;
+setTimeout(loadVoices, 500);
 
 // ── WAKE ──
 function startWake(){{
@@ -556,7 +573,8 @@ function activate(){{
   if(S.active||S.speaking)return;
   try{{S.wakeR&&S.wakeR.stop()}}catch(e){{}}
   S.active=true;S.lastT=Date.now();
-  setS("listening");addMsg("a","👂");startTalk();
+  setS("listening");
+  startTalk();
 }}
 function manualActivate(){{
   if(S.active){{deactivate();return}}activate();
@@ -565,7 +583,6 @@ function deactivate(){{
   S.active=false;
   try{{S.talkR&&S.talkR.stop()}}catch(e){{}}
   clearInterval(S.silT);setS("idle");
-  addMsg("a","😴");
   setTimeout(()=>{{if(S.voiceOn)startWake()}},2000);
 }}
 
@@ -613,27 +630,42 @@ function sendQ(t){{
 function onKey(e){{if(e.key==="Enter"&&!e.shiftKey){{e.preventDefault();sendText()}}}}
 function resize(el){{el.style.height="auto";el.style.height=Math.min(el.scrollHeight,88)+"px"}}
 
-// ── FILES (RAG) ──
+// ── FILES (UPGRADED RAG) ──
 async function loadFiles(inp){{
   for(const f of Array.from(inp.files)){{
     try{{
-      let txt=f.name.endsWith(".pdf")?await pdfTxt(f):await f.text();
-      S.docs.push({{n:f.name,c:txt.slice(0,4000)}});
+      let txt = f.name.endsWith(".pdf") ? await pdfTxt(f) : await f.text();
+      S.docs.push({{n:f.name,c:txt.slice(0,8000)}});
       addPill(f.name,S.docs.length-1);toast("📎 "+f.name);
     }}catch{{toast("Failed: "+f.name)}}
   }}
   updateBadge();inp.value="";
 }}
-async function pdfTxt(f){{
-  return new Promise(r=>{{
-    const rd=new FileReader();
-    rd.onload=e=>{{
-      const ms=(e.target.result.match(/\(([^){{}}\\\\]+)\)/g)||[]).map(m=>m.slice(1,-1)).join(" ");
-      r(ms.slice(0,4000)||"[PDF - no text extracted]");
-    }};
-    rd.readAsBinaryString(f);
-  }});
+
+// ROBUST PDF PARSER USING PDF.JS
+async function pdfTxt(f) {{
+    return new Promise((resolve, reject) => {{
+        const reader = new FileReader();
+        reader.onload = async function() {{
+            try {{
+                const typedarray = new Uint8Array(this.result);
+                const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                let fullText = "";
+                for (let i = 1; i <= pdf.numPages; i++) {{
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(" ");
+                    fullText += pageText + "\\n";
+                }}
+                resolve(fullText || "[PDF - no text found]");
+            }} catch (e) {{
+                resolve("[PDF Parsing Error]");
+            }}
+        }};
+        reader.readAsArrayBuffer(f);
+    }});
 }}
+
 function addPill(name,i){{
   const p=document.createElement("div");
   p.className="pill";p.id="p"+i;
@@ -694,16 +726,33 @@ async function groqVis(b64){{
   }}catch{{speak("Vision error.");return null}}
 }}
 
-// ── GROQ ──
+// ── GROQ & TYPING INDICATOR ──
+let typingDiv = null;
+
+function showTyping() {{
+    const p=document.getElementById("conv");
+    typingDiv = document.createElement("div");
+    typingDiv.className = "msg a typing";
+    typingDiv.textContent = "typing...";
+    p.appendChild(typingDiv);
+    p.scrollTop=p.scrollHeight;
+}}
+
+function removeTyping() {{
+    if(typingDiv) {{ typingDiv.remove(); typingDiv = null; }}
+}}
+
 async function groq(txt,vis){{
+  showTyping();
   const ts=new Date().toLocaleString("en-US",{{hour:"2-digit",minute:"2-digit",weekday:"short",month:"short",day:"numeric"}});
   let sys=CFG.prompt+"\\n\\nTime: "+ts;
   if(vis&&S.camDesc)sys+="\\n\\n[CAMERA]: "+S.camDesc;
   if(CFG.kb)sys+="\\n\\n[KB]:\\n"+CFG.kb.slice(0,1000);
   const dc=docCtx();
-  if(dc)sys+="\\n\\n[DOCS]:\\n"+dc.slice(0,3000);
+  if(dc)sys+="\\n\\n[DOCS]:\\n"+dc.slice(0,5000);
   const lim=CFG.mem===0?S.hist.length:CFG.mem*2;
   const msgs=[{{role:"system",content:sys}},...S.hist.slice(-lim),{{role:"user",content:txt}}];
+  
   try{{
     const r=await fetch("https://api.groq.com/openai/v1/chat/completions",{{
       method:"POST",
@@ -712,47 +761,59 @@ async function groq(txt,vis){{
     }});
     if(!r.ok)throw Error((await r.json().catch(()=>({{}}))).error?.message||r.status);
     const rep=(await r.json()).choices[0].message.content.trim();
+    
+    removeTyping();
     S.hist.push({{role:"user",content:txt}},{{role:"assistant",content:rep}});
     if(S.hist.length>200)S.hist=S.hist.slice(-200);
     speak(rep);
   }}catch(e){{
+    removeTyping();
     addMsg("a","⚠ "+(e.message||"Error"));
     setS(S.active?"listening":"idle");
   }}
 }}
 
-// ── TTS ──
+// ── TTS (UPGRADED) ──
 function speak(txt){{
   addMsg("a",txt);S.lastT=Date.now();
   if(S.muted){{setS(S.active?"listening":"idle");return}}
   setS("speaking");S.speaking=true;
   speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(txt);
+  
+  // Clean markdown syntax before speaking so it doesn't say "asterisk asterisk"
+  const cleanTxt = txt.replace(/\\*\\*|__|`|#/g, '');
+  const u=new SpeechSynthesisUtterance(cleanTxt);
   u.rate=1.05;u.pitch=.95;u.volume=1;
+  
   const vs=speechSynthesis.getVoices();
-  const vn=CFG.voice.replace("Neural","");
-  const pk=vs.find(v=>v.name.includes(vn))||vs.find(v=>v.lang.startsWith("en-IN"))||vs[0];
-  if(pk)u.voice=pk;
+  const pk = vs.find(v => v.name === CFG.voice) || vs.find(v => v.lang.startsWith("en-IN")) || vs[0];
+  if(pk) u.voice=pk;
+  
   u.onend=u.onerror=()=>{{S.speaking=false;setS(S.active?"listening":"idle")}};
   speechSynthesis.speak(u);
 }}
 
-// ── UI ──
+// ── UI (MARKDOWN SUPPORT) ──
 function addMsg(r,txt){{
   const p=document.getElementById("conv"),m=document.createElement("div");
   m.className="msg "+r;
   const t=new Date().toLocaleTimeString([],{{hour:"2-digit",minute:"2-digit"}});
-  m.innerHTML=`<div>${{esc(txt)}}</div>
+  
+  // Apply Markdown ONLY to assistant messages, escape user messages
+  const content = r === "a" ? marked.parse(txt) : esc(txt);
+
+  m.innerHTML=`<div class="msg-content">${{content}}</div>
     <div class="msg-meta">
       <span class="msg-t">${{t}}</span>
       ${{r==="a"?`<button class="cpybtn" onclick="cp(this)">copy</button>`:"" }}
     </div>`;
-  p.appendChild(m);p.scrollTop=p.scrollHeight;
-  const ms=p.querySelectorAll(".msg");if(ms.length>30)ms[0].remove();
+  p.appendChild(m);
+  p.scrollTo({{ top: p.scrollHeight, behavior: 'smooth' }});
+  const ms=p.querySelectorAll(".msg:not(.typing)");if(ms.length>30)ms[0].remove();
 }}
 function esc(s){{const d=document.createElement("div");d.textContent=s;return d.innerHTML}}
 function cp(btn){{
-  navigator.clipboard.writeText(btn.closest(".msg").querySelector("div").textContent)
+  navigator.clipboard.writeText(btn.closest(".msg").querySelector(".msg-content").innerText)
     .then(()=>toast("Copied"));
 }}
 function clearConv(){{
@@ -765,7 +826,6 @@ function setS(st){{
   document.getElementById("dot").className=st;
   const stl={{listening:"Sun raha hoon",thinking:"Soch raha hoon",speaking:"Bol raha hoon",analyzing:"Dekh raha hoon",idle:"—"}};
   document.getElementById("stxt").textContent=stl[st]||"—";
-  // Show chips only when idle
   document.getElementById("chips").classList.toggle("on",st==="idle");
 }}
 
@@ -809,7 +869,7 @@ document.addEventListener("keydown",e=>{{
 function openSett(){{
   document.getElementById("sm").value=CFG.model;
   document.getElementById("sv").value=CFG.vision;
-  document.getElementById("svv").value=CFG.voice;
+  if(CFG.voice) document.getElementById("svv").value=CFG.voice;
   document.getElementById("smem").value=CFG.mem;
   document.getElementById("sprompt").value=CFG.prompt;
   document.getElementById("sett").classList.add("open");
@@ -834,9 +894,6 @@ function toast(m,d=2400){{
   const e=document.getElementById("toast");e.textContent=m;e.classList.add("on");
   clearTimeout(_tt);_tt=setTimeout(()=>e.classList.remove("on"),d);
 }}
-
-speechSynthesis.onvoiceschanged=()=>speechSynthesis.getVoices();
-setTimeout(()=>speechSynthesis.getVoices(),100);
 </script>
 </body>
 </html>
