@@ -655,7 +655,7 @@ function updateBadge(){{
 }}
 function docCtx(){{
   const ds=S.docs.filter(Boolean);
-  return ds.length?ds.map(d=>`[${{{d.n}}}]:\\n${{d.c}}`).join("\\n---\\n"):"";
+  return ds.length?ds.map(d=>"["+d.n+"]:\\n"+d.c).join("\\n---\\n"):"";
 }}
 
 // ── VISION ──
