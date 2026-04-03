@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Light mode ── */
+:root {
+  --bg:           #f8f7ff;
+  --text:         #1e1b4b;
+  --text2:        rgba(30,27,75,0.58);
+  --accent:       #7c3aed;
+  --accent2:      #2563eb;
+  --glass:        rgba(255,255,255,0.62);
+  --glass-border: rgba(0,0,0,0.09);
+  --navbar:       rgba(248,247,255,0.88);
+}
+
+/* ── Dark mode ── */
+.dark {
+  --bg:           #06010f;
+  --text:         #f0ebff;
+  --text2:        rgba(240,235,255,0.52);
+  --accent:       #a78bfa;
+  --accent2:      #60a5fa;
+  --glass:        rgba(255,255,255,0.042);
+  --glass-border: rgba(255,255,255,0.09);
+  --navbar:       rgba(6,1,15,0.82);
+}
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html { background: #06010f; scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  transition: background 0.45s ease, color 0.45s ease;
+}
+
+::-webkit-scrollbar       { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 2px; }
+
+::selection { background: rgba(167,139,250,0.25); }
+
+/* ── Utilities ── */
+@layer components {
+  .glass {
+    background: var(--glass);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    transition: background 0.4s, border-color 0.4s;
+  }
+  .dark .glass-glow {
+    box-shadow: 0 0 0 1px rgba(167,139,250,0.22), 0 8px 40px rgba(167,139,250,0.07);
+  }
+  .grad-text {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .grad-btn {
+    background: linear-gradient(135deg, #7c3aed, #2563eb);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .grad-btn:hover  { opacity: 0.87; transform: translateY(-2px); }
+  .grad-btn:active { transform: scale(0.97); }
+}
+
+/* ── Fixed Three.js canvas ── */
+#canvas-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ── HTML overlay ── */
+#overlay {
+  position: relative;
+  z-index: 10;
+}
+
+/* ── Scroll progress bar ── */
+#progress-bar {
+  position: fixed;
+  top: 0; left: 0;
+  height: 2px; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  z-index: 9999;
+  pointer-events: none;
+  transition: width 0.1s linear;
+}
+
+/* ── Section ── */
+.section {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  padding: 6rem 2rem;
+}
+@media (min-width: 768px) {
+  .section { padding: 6rem 5rem; }
+}
+
+/* ── Spinner ── */
+@keyframes spin-icon {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+.spin-icon { animation: spin-icon 0.85s linear infinite; }
